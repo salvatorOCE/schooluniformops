@@ -1,7 +1,7 @@
 const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
 
 const woo = new WooCommerceRestApi({
-    url: 'https://schooluniformsolutions.com.au',
+    url: process.env.WOO_URL || '',
     consumerKey: process.env.WOO_CONSUMER_KEY,
     consumerSecret: process.env.WOO_CONSUMER_SECRET,
     version: 'wc/v3'

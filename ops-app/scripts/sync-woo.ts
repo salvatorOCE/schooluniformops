@@ -9,12 +9,12 @@ const productsOnly = process.argv.includes('--products-only');
 // --- Configuration ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const WOO_URL = process.env.WOO_URL || 'https://schooluniforms.com.au';
+const WOO_URL = process.env.WOO_URL;
 const WOO_CK = process.env.WOO_CONSUMER_KEY;
 const WOO_CS = process.env.WOO_CONSUMER_SECRET;
 
-if (!SUPABASE_URL || !SUPABASE_KEY || !WOO_CK || !WOO_CS) {
-    console.error('Missing environment variables. Check .env.local');
+if (!SUPABASE_URL || !SUPABASE_KEY || !WOO_URL || !WOO_CK || !WOO_CS) {
+    console.error('Missing environment variables. Check .env.local (need NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WOO_URL, WOO_CONSUMER_KEY, WOO_CONSUMER_SECRET)');
     process.exit(1);
 }
 

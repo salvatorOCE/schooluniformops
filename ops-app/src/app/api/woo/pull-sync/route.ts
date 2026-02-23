@@ -4,11 +4,11 @@ import WooCommerceRestApi from "@woocommerce/woocommerce-rest-api";
 
 // Initialize WooCommerce API
 const startWoo = () => {
-    const url = process.env.WOO_URL || 'https://schooluniformsolutions.com.au';
+    const url = process.env.WOO_URL;
     const consumerKey = process.env.WOO_CONSUMER_KEY;
     const consumerSecret = process.env.WOO_CONSUMER_SECRET;
 
-    if (!consumerKey || !consumerSecret) return null;
+    if (!url || !consumerKey || !consumerSecret) return null;
 
     return new WooCommerceRestApi({
         url,

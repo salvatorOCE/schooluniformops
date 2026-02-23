@@ -6,5 +6,9 @@
   command = "npm run build"
   publish = ".next"
 
+# Allow build to succeed: NEXT_PUBLIC_* and WOO_URL are inlined at build time; omit from secrets scan.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "WOO_URL,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
