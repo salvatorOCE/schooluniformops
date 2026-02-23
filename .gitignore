@@ -4,3 +4,19 @@ credentials.json
 token.json
 __pycache__/
 *.pyc
+
+# Keep repo ops-app only; ignore local agent/other stuff
+.agent/
+Antigravity Template/
+SKILLS/
+directives/
+execution/
+firecrawl-mcp-server/
+AGENTS.md
+BRAND_GUIDELINES.md
+CLAUDE.md
+GEMINI.md
+Launch App.exe
+Launcher.cs
+Open App in Chrome.command
+design-system.json
