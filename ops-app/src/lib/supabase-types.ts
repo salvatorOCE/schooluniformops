@@ -133,6 +133,8 @@ export interface Database {
                     name: string
                     quantity: number
                     size: string | null
+                    unit_price?: number
+                    total_price?: number
                     requires_embroidery: boolean
                     embroidery_status: 'NA' | 'PENDING' | 'DONE' | 'PARTIAL'
                     batch_id: string | null
@@ -146,6 +148,8 @@ export interface Database {
                     name: string
                     quantity?: number
                     size?: string | null
+                    unit_price?: number
+                    total_price?: number
                     requires_embroidery?: boolean
                     embroidery_status?: 'NA' | 'PENDING' | 'DONE' | 'PARTIAL'
                     batch_id?: string | null

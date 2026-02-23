@@ -6,14 +6,13 @@ import { Order } from '@/lib/types';
 import { Plus, Building2, Package, Search } from 'lucide-react';
 import { BulkOrderModal } from '@/components/BulkOrderModal';
 import { format } from 'date-fns';
-import { useRouter } from 'next/navigation';
 
 export default function SchoolBulkPage() {
     const adapter = useData();
-    const router = useRouter();
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editOrderId, setEditOrderId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
     const loadOrders = async () => {
@@ -49,7 +48,7 @@ export default function SchoolBulkPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => { setEditOrderId(null); setIsModalOpen(true); }}
                     className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2"
                 >
                     <Plus className="w-5 h-5" />
@@ -88,7 +87,7 @@ export default function SchoolBulkPage() {
                         Manually create a bulk order when a school requests stock via email or phone.
                     </p>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => { setEditOrderId(null); setIsModalOpen(true); }}
                         className="btn bg-white border shadow-sm text-slate-700 hover:bg-slate-50"
                     >
                         Create First Bulk Order
@@ -101,7 +100,7 @@ export default function SchoolBulkPage() {
                             <tr>
                                 <th className="px-6 py-4">Order Number</th>
                                 <th className="px-6 py-4">School</th>
-                                <th className="px-6 py-4">Date</th>
+                                <th className="px-6 py-4">Date ordered</th>
                                 <th className="px-6 py-4">Items</th>
                                 <th className="px-6 py-4">Status</th>
                             </tr>
@@ -111,7 +110,10 @@ export default function SchoolBulkPage() {
                                 <tr
                                     key={order.id}
                                     className="hover:bg-slate-50 cursor-pointer transition-colors"
-                                    onClick={() => router.push(`/orders?search=${order.order_number}`)}
+                                    onClick={() => {
+                                        setEditOrderId(order.id);
+                                        setIsModalOpen(true);
+                                    }}
                                 >
                                     <td className="px-6 py-4 font-medium text-slate-900">
                                         {order.order_number}
@@ -123,7 +125,9 @@ export default function SchoolBulkPage() {
                                         <span className="font-medium text-slate-700">{order.school_name}</span>
                                     </td>
                                     <td className="px-6 py-4 text-slate-500">
-                                        {format(new Date(order.created_at), 'MMM d, yyyy')}
+                                        {order.meta?.order_requested_at
+                                            ? format(new Date(order.meta.order_requested_at), 'MMM d, yyyy')
+                                            : format(new Date(order.created_at), 'MMM d, yyyy')}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-1.5 text-slate-600">
@@ -134,11 +138,13 @@ export default function SchoolBulkPage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.order_status === 'Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                                            order.order_status === 'Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                             order.order_status === 'Processing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                order.order_status === 'In Production' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                                    'bg-slate-100 text-slate-700 border-slate-200'
-                                            }`}>
+                                            order.order_status === 'In Production' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                            order.order_status === 'Partial Completion' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                            'bg-slate-100 text-slate-700 border-slate-200'
+                                        }`}>
                                             {order.order_status}
                                         </span>
                                     </td>
@@ -151,9 +157,14 @@ export default function SchoolBulkPage() {
 
             {isModalOpen && (
                 <BulkOrderModal
-                    onClose={() => setIsModalOpen(false)}
+                    orderId={editOrderId}
+                    onClose={() => {
+                        setIsModalOpen(false);
+                        setEditOrderId(null);
+                    }}
                     onSave={() => {
                         setIsModalOpen(false);
+                        setEditOrderId(null);
                         loadOrders();
                     }}
                 />

@@ -22,7 +22,6 @@ import {
     LogOut
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
-import { DensityToggle } from './DensityToggle';
 import { useMobile } from '@/lib/mobile-context';
 
 export interface NavItem {
@@ -57,6 +56,7 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
     const { isMobile } = useMobile();
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean, message: string } | null>(null);
+    const [showSettings, setShowSettings] = useState(false);
 
     const handleManualSync = async (fullSync = false) => {
         if (fullSync && !confirm('Full re-sync will fetch ALL orders from WooCommerce. This may take a minute. Continue?')) {
@@ -182,17 +182,21 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
                     </div>
                 </div>
 
-                <DensityToggle />
-
-                <div className="flex items-center gap-3 group cursor-pointer hover:bg-[#003836] p-2 rounded-lg transition-colors">
+                <div className="flex items-center gap-3 group p-2 rounded-lg">
                     <div className="w-9 h-9 rounded bg-[#004440] flex items-center justify-center border border-[#005550] shadow-inner text-emerald-200">
                         <User className="w-4 h-4" />
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-emerald-50 truncate">Michael B.</span>
-                        <span className="text-[10px] text-emerald-400/80 truncate">Warehouse Manager</span>
+                        <span className="text-sm font-semibold text-emerald-50 truncate">School Uniform Solutions Admin</span>
+                        <span className="text-[10px] text-emerald-400/80 truncate">Admin</span>
                     </div>
-                    <Settings className="w-4 h-4 text-emerald-600 group-hover:text-emerald-400 transition-colors" />
+                    <button
+                        onClick={() => setShowSettings(true)}
+                        className="p-2 -m-2 rounded-lg text-emerald-600 hover:text-emerald-400 hover:bg-[#003836] transition-colors"
+                        title="Settings"
+                    >
+                        <Settings className="w-4 h-4" />
+                    </button>
                 </div>
                 <button
                     onClick={handleLogout}
@@ -202,6 +206,31 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
                     Sign out
                 </button>
             </div>
+
+            {showSettings && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4" onClick={() => setShowSettings(false)}>
+                    <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <Settings className="w-5 h-5 text-slate-500" />
+                                App settings
+                            </h3>
+                            <button onClick={() => setShowSettings(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">
+                                <span className="sr-only">Close</span>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-6">
+                            <div className="pt-2 border-t border-slate-100">
+                                <p className="text-xs text-slate-500">WooCommerce sync is in the sidebar (SYNC / FULL). Sign out below.</p>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50">
+                            <button onClick={() => setShowSettings(false)} className="w-full px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Done</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </aside>
     );
 }

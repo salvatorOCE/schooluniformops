@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 type Density = 'comfort' | 'compact';
 
@@ -12,21 +12,9 @@ interface UIContextType {
 const UIContext = createContext<UIContextType | undefined>(undefined);
 
 export function UIProvider({ children }: { children: React.ReactNode }) {
-    const [density, setDensity] = useState<Density>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('ops-ui-density');
-            return (saved === 'comfort' || saved === 'compact') ? saved : 'comfort';
-        }
-        return 'comfort';
-    });
+    const [density] = useState<Density>('comfort');
 
-    const toggleDensity = () => {
-        setDensity(prev => {
-            const next = prev === 'comfort' ? 'compact' : 'comfort';
-            localStorage.setItem('ops-ui-density', next);
-            return next;
-        });
-    };
+    const toggleDensity = () => {};
 
     return (
         <UIContext.Provider value={{ density, toggleDensity }}>

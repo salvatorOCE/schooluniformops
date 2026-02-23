@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Search, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Mail, Sparkles, FileDown } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
+import { format } from 'date-fns';
+import { downloadBulkOrderInvoice } from '@/lib/generate-bulk-invoice-pdf';
 
 interface BulkOrderModalProps {
     onClose: () => void;
     onSave: () => void;
+    /** When set, modal opens in edit mode: load this order and save updates instead of creating. */
+    orderId?: string | null;
 }
 
 interface SelectedItem {
@@ -19,9 +23,10 @@ interface SelectedItem {
     price: number;
 }
 
-export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
+export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps) {
     const adapter = useData();
     const [saving, setSaving] = useState(false);
+    const [loadingOrder, setLoadingOrder] = useState(!!orderId);
 
     const [schoolId, setSchoolId] = useState('');
     const [isAddingSchool, setIsAddingSchool] = useState(false);
@@ -32,8 +37,14 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
     const [customerName, setCustomerName] = useState('');
     const [studentName, setStudentName] = useState('');
     const [orderStatus, setOrderStatus] = useState('Processing');
+    const [requestedDate, setRequestedDate] = useState(''); // Date order was asked for (YYYY-MM-DD)
 
     const [items, setItems] = useState<SelectedItem[]>([]);
+    /** Delivered quantity per line (same index as items). Only used when status is Partial Completion. */
+    const [partialDelivery, setPartialDelivery] = useState<number[]>([]);
+    const [pastedEmail, setPastedEmail] = useState('');
+    const [parsing, setParsing] = useState(false);
+    const [parseError, setParseError] = useState<string | null>(null);
 
     const [schools, setSchools] = useState<{ id: string, name: string, code: string }[]>([]);
     const [products, setProducts] = useState<{ id: string, name: string, sku: string, price: number, sizes: string[] }[]>([]);
@@ -68,6 +79,46 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
         loadProducts();
     }, [schoolId, adapter]);
 
+    // Load order when editing
+    useEffect(() => {
+        if (!orderId) {
+            setLoadingOrder(false);
+            return;
+        }
+        let cancelled = false;
+        setLoadingOrder(true);
+        adapter.getOrderById(orderId).then((order) => {
+            if (cancelled || !order) {
+                setLoadingOrder(false);
+                return;
+            }
+            setSchoolId(order.school_id || '');
+            setOrderNumber(order.order_number || '');
+            setCustomerName(order.parent_name || '');
+            setStudentName(order.student_name || '');
+            setOrderStatus(order.order_status || 'Processing');
+            setRequestedDate(order.meta?.order_requested_at || '');
+            const loadedItems = order.items.map((i) => ({
+                id: i.id,
+                productId: '',
+                productName: i.product_name || '',
+                sku: i.sku || '',
+                size: i.size || '',
+                quantity: Number.isFinite(i.quantity) ? i.quantity : 1,
+                price: Number.isFinite(i.unit_price) ? i.unit_price! : 0
+            }));
+            setItems(loadedItems);
+            const pd = order.meta?.partial_delivery;
+            setPartialDelivery(
+                Array.from({ length: loadedItems.length }, (_, i) =>
+                    Number.isFinite(pd?.[i]) ? Math.min(Math.max(0, pd![i]), loadedItems[i]?.quantity ?? 0) : 0
+                )
+            );
+            setLoadingOrder(false);
+        }).catch(() => setLoadingOrder(false));
+        return () => { cancelled = true; };
+    }, [orderId, adapter]);
+
     const addItem = () => {
         setItems([...items, {
             id: Date.now().toString(),
@@ -78,6 +129,7 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
             quantity: 1,
             price: 0
         }]);
+        setPartialDelivery([...partialDelivery, 0]);
     };
 
     const updateItem = (id: string, updates: Partial<SelectedItem>) => {
@@ -85,7 +137,60 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
     };
 
     const removeItem = (id: string) => {
+        const index = items.findIndex(item => item.id === id);
         setItems(items.filter(item => item.id !== id));
+        if (index >= 0) setPartialDelivery(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleParseEmail = async () => {
+        const text = pastedEmail.trim();
+        if (!text) return;
+        setParsing(true);
+        setParseError(null);
+        try {
+            const url = '/api/bulk-order/parse-email';
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text }),
+            });
+            let data: { items?: unknown[]; error?: string; customerName?: string; departmentOrAttention?: string };
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await res.json();
+            } else {
+                const raw = await res.text();
+                console.error('[Parse] Non-JSON response:', res.status, raw.slice(0, 200));
+                setParseError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Check terminal where "npm run dev" is running.`);
+                return;
+            }
+            if (!res.ok) {
+                const errMsg = data.error || `Request failed (${res.status})`;
+                console.error('[Parse] API error:', res.status, errMsg);
+                setParseError(errMsg);
+                return;
+            }
+            const parsed = (data.items || []).map((item: { productName?: string; size?: string; quantity?: number; sku?: string; price?: number }, i: number) => ({
+                id: `parsed-${Date.now()}-${i}`,
+                productId: '',
+                productName: String(item.productName ?? ''),
+                sku: String(item.sku ?? ''),
+                size: String(item.size ?? ''),
+                quantity: Number(item.quantity) || 1,
+                price: (Number(item.price) ?? 0) || 0,
+            }));
+            setItems(parsed);
+            setPartialDelivery(parsed.map(() => 0));
+            if (data.customerName != null && String(data.customerName).trim()) setCustomerName(String(data.customerName).trim());
+            if (data.departmentOrAttention != null && String(data.departmentOrAttention).trim()) setStudentName(String(data.departmentOrAttention).trim());
+            setPastedEmail('');
+        } catch (e) {
+            const err = e instanceof Error ? e.message : 'Parse failed';
+            console.error('[Parse] Exception:', e);
+            setParseError(err);
+        } finally {
+            setParsing(false);
+        }
     };
 
     const handleSave = async () => {
@@ -100,21 +205,40 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                 finalSchoolId = newSchool.id;
             }
 
-            await adapter.createBulkOrder(
-                finalSchoolId,
-                { orderNumber, customerName, studentName, status: orderStatus },
-                items
+            const delivered = items.map((item, i) =>
+                Math.min(Math.max(0, partialDelivery[i] ?? 0), Number.isFinite(item.quantity) ? item.quantity : 0)
             );
+            const orderDetails = {
+                orderNumber,
+                customerName,
+                studentName,
+                status: orderStatus,
+                requestedAt: requestedDate || undefined,
+                partialDelivery: orderStatus === 'Partial Completion' ? delivered : []
+            };
+            if (orderId) {
+                await adapter.updateBulkOrder(orderId, finalSchoolId, orderDetails, items);
+            } else {
+                await adapter.createBulkOrder(finalSchoolId, orderDetails, items);
+            }
             onSave();
         } catch (error) {
-            console.error('Failed to create bulk order:', error);
+            console.error('Failed to save bulk order:', error);
             alert('Failed to save bulk order. Please try again.');
         } finally {
             setSaving(false);
         }
     };
 
-    const calculateTotal = () => items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const calculateTotal = () =>
+        items.reduce(
+            (sum, item) =>
+                sum +
+                (Number.isFinite(item.quantity) && Number.isFinite(item.price)
+                    ? item.quantity * item.price
+                    : 0),
+            0
+        );
 
     return (
         <div className="fixed inset-0 bg-slate-900/50 flex flex-col items-center justify-center p-4 z-50">
@@ -123,8 +247,8 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-slate-100">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-900">Create Bulk Order</h2>
-                        <p className="text-slate-500 text-sm mt-1">Record a manual offline order for a school</p>
+                        <h2 className="text-xl font-bold text-slate-900">{orderId ? 'Edit Bulk Order' : 'Create Bulk Order'}</h2>
+                        <p className="text-slate-500 text-sm mt-1">{orderId ? 'Change order details, items, or prices' : 'Record a manual offline order for a school'}</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
                         <X className="w-5 h-5" />
@@ -133,7 +257,25 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
 
                 {/* Body */}
                 <div className="p-6 overflow-y-auto flex-1">
+                    {loadingOrder ? (
+                        <div className="flex items-center justify-center py-12 text-slate-500">Loading order...</div>
+                    ) : (
                     <div className="space-y-6">
+                        {/* Status — prominent at top so it's always visible */}
+                        <div className="flex items-center gap-3">
+                            <label className="text-sm font-medium text-slate-700 shrink-0">Status</label>
+                            <select
+                                className="border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium bg-white text-slate-900 min-w-[180px]"
+                                value={orderStatus}
+                                onChange={(e) => setOrderStatus(e.target.value)}
+                            >
+                                <option value="Processing">Processing</option>
+                                <option value="In Production">In Production</option>
+                                <option value="Partial Completion">Partial Completion</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+
                         {/* School Selection */}
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                             <div className="flex items-center justify-between mb-3">
@@ -195,18 +337,6 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-                                <select
-                                    className="w-full border-slate-200 rounded-lg p-2 text-sm"
-                                    value={orderStatus}
-                                    onChange={(e) => setOrderStatus(e.target.value)}
-                                >
-                                    <option value="Processing">Processing</option>
-                                    <option value="In Production">In Production</option>
-                                    <option value="Completed">Completed</option>
-                                </select>
-                            </div>
-                            <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">Customer / Contact Name</label>
                                 <input
                                     type="text"
@@ -225,6 +355,43 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                                     value={studentName}
                                     onChange={(e) => setStudentName(e.target.value)}
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Date order was requested</label>
+                                <input
+                                    type="date"
+                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm"
+                                    value={requestedDate}
+                                    onChange={(e) => setRequestedDate(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Paste email / AI parse */}
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Mail className="w-4 h-4 text-slate-500" />
+                                <label className="block text-sm font-medium text-slate-700">Paste email order</label>
+                            </div>
+                            <p className="text-xs text-slate-500 mb-2">Paste the order from an email and AI will fill in the line items. You can edit them below before saving.</p>
+                            <textarea
+                                placeholder="Paste email or order text here..."
+                                className="w-full border border-slate-200 rounded-lg p-3 text-sm min-h-[100px] resize-y"
+                                value={pastedEmail}
+                                onChange={(e) => { setPastedEmail(e.target.value); setParseError(null); }}
+                                disabled={parsing}
+                            />
+                            <div className="flex items-center gap-2 mt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleParseEmail}
+                                    disabled={parsing || !pastedEmail.trim()}
+                                    className="btn bg-slate-800 hover:bg-slate-900 text-white text-sm flex items-center gap-1.5 disabled:opacity-50"
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    {parsing ? 'Parsing...' : 'Parse with AI'}
+                                </button>
+                                {parseError && <span className="text-sm text-red-600">{parseError}</span>}
                             </div>
                         </div>
 
@@ -305,8 +472,8 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                                                     type="number"
                                                     min="1"
                                                     className="w-full border-slate-200 rounded text-sm py-1.5 px-2"
-                                                    value={item.quantity}
-                                                    onChange={(e) => updateItem(item.id, { quantity: parseInt(e.target.value) || 1 })}
+                                                    value={Number.isFinite(item.quantity) ? item.quantity : 1}
+                                                    onChange={(e) => updateItem(item.id, { quantity: parseInt(e.target.value, 10) || 1 })}
                                                 />
                                             </div>
                                             <div className="w-20">
@@ -316,10 +483,30 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                                                     min="0"
                                                     step="0.01"
                                                     className="w-full border-slate-200 rounded text-sm py-1.5 px-2"
-                                                    value={item.price}
+                                                    value={Number.isFinite(item.price) ? item.price : 0}
                                                     onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
                                                 />
                                             </div>
+                                            {orderStatus === 'Partial Completion' && (
+                                                <div className="w-20">
+                                                    <label className="block text-xs text-slate-500 mb-1">Delivered</label>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={Number.isFinite(item.quantity) ? item.quantity : 0}
+                                                        className="w-full border-slate-200 rounded text-sm py-1.5 px-2 bg-amber-50/80"
+                                                        value={Math.min(partialDelivery[index] ?? 0, item.quantity)}
+                                                        onChange={(e) => {
+                                                            const v = parseInt(e.target.value, 10);
+                                                            if (!Number.isFinite(v)) return;
+                                                            const next = [...partialDelivery];
+                                                            while (next.length <= index) next.push(0);
+                                                            next[index] = Math.max(0, Math.min(v, item.quantity));
+                                                            setPartialDelivery(next);
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
                                             <button
                                                 onClick={() => removeItem(item.id)}
                                                 className="p-2 text-red-500 hover:bg-red-50 rounded"
@@ -332,12 +519,47 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                             </div>
                         </div>
                     </div>
+                    )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between rounded-b-2xl">
-                    <div className="text-lg font-bold text-slate-900">
-                        Total: ${calculateTotal().toFixed(2)}
+                <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-3 rounded-b-2xl">
+                    <div className="flex items-center gap-4">
+                        <span className="text-lg font-bold text-slate-900">
+                            Total: ${calculateTotal().toFixed(2)}
+                        </span>
+                        {items.length > 0 && !loadingOrder && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const schoolName = schools.find(s => s.id === schoolId)?.name ?? '—';
+                                    const dateOrdered = requestedDate
+                                        ? format(new Date(requestedDate), 'dd MMM yyyy')
+                                        : format(new Date(), 'dd MMM yyyy');
+                                    downloadBulkOrderInvoice(
+                                        {
+                                            orderNumber: orderNumber || 'Draft',
+                                            dateOrdered,
+                                            schoolName,
+                                            customerName: customerName || '—',
+                                            department: studentName || undefined,
+                                            items: items.map(i => ({
+                                                productName: i.productName,
+                                                sku: i.sku,
+                                                size: i.size,
+                                                quantity: Number.isFinite(i.quantity) ? i.quantity : 0,
+                                                price: Number.isFinite(i.price) ? i.price : 0
+                                            }))
+                                        },
+                                        orderNumber ? `Invoice-${orderNumber}` : undefined
+                                    );
+                                }}
+                                className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 text-sm"
+                            >
+                                <FileDown className="w-4 h-4" />
+                                Download invoice
+                            </button>
+                        )}
                     </div>
                     <div className="flex gap-3">
                         <button
@@ -350,9 +572,9 @@ export function BulkOrderModal({ onClose, onSave }: BulkOrderModalProps) {
                         <button
                             onClick={handleSave}
                             className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                            disabled={saving || (!schoolId && !isAddingSchool) || items.length === 0}
+                            disabled={saving || loadingOrder || (!schoolId && !isAddingSchool) || items.length === 0}
                         >
-                            {saving ? 'Creating...' : 'Create Bulk Order'}
+                            {saving ? (orderId ? 'Saving...' : 'Creating...') : (orderId ? 'Save changes' : 'Create Bulk Order')}
                         </button>
                     </div>
                 </div>

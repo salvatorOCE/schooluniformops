@@ -13,6 +13,7 @@ export interface OrderItem {
   size?: string;
   requires_embroidery: boolean;
   embroidery_status?: 'PENDING' | 'DONE'; // Track item-level status
+  unit_price?: number; // For bulk orders / edit
 }
 
 export interface School {
@@ -57,6 +58,9 @@ export interface Order {
 
   // Production Notes
   notes?: string;
+
+  // Bulk order meta (e.g. date order was requested, partial delivery)
+  meta?: { order_requested_at?: string; partial_delivery?: number[] };
 
   // Senior Order Specifics
   is_senior_order?: boolean;
@@ -228,6 +232,20 @@ export interface SchoolInventoryItem {
   max_par_level: number;
   last_restocked?: string;
   status: 'OK' | 'LOW' | 'CRITICAL';
+}
+
+/** One row contributing to "Unprocessed" count for a product/size in Digital Stock */
+export interface UnprocessedDetailRow {
+  order_item_id: string;
+  order_id: string;
+  order_number: string;
+  status: string;
+  customer_name: string;
+  student_name: string | null;
+  quantity: number;
+  sku: string;
+  name: string;
+  size: string | null;
 }
 
 // --- History & Audit Types ---

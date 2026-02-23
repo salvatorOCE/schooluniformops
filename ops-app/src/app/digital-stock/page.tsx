@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Package, Search, RefreshCw, Edit, X, Truck, ChevronDown, ChevronRight, Plus, School, AlertCircle, CheckCircle2, Trash2, Building2 } from 'lucide-react';
+import { Package, Search, RefreshCw, Edit, X, Truck, ChevronDown, ChevronRight, Plus, School, AlertCircle, CheckCircle2, Trash2, Building2, ListOrdered, Eraser } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
+import { isValidDigitalStockSize } from '@/lib/supabase-adapter';
+import type { UnprocessedDetailRow } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { useMobile } from '@/lib/mobile-context';
 
@@ -44,11 +46,13 @@ const GarmentRow = ({
     garment,
     onAdjust,
     onDeleteProduct,
+    onUnprocessedClick,
     isMobile
 }: {
     garment: GarmentGroup;
     onAdjust: (item: InventoryStockItem) => void;
     onDeleteProduct: (productId: string, productName: string) => void;
+    onUnprocessedClick?: (item: InventoryStockItem & { size: string }) => void;
     isMobile: boolean;
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -155,7 +159,13 @@ const GarmentRow = ({
                                     <span className="text-slate-500 truncate">Avail</span>
                                     <span className={`font-semibold ${item.stock_in_transit > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>{item.stock_in_transit || 0}</span>
                                     <span className="font-semibold text-slate-700">{item.stock_on_shelf}</span>
-                                    <span className={`font-semibold ${item.unprocessed > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{item.unprocessed}</span>
+                                    {item.unprocessed > 0 && onUnprocessedClick ? (
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); onUnprocessedClick(item); }} className="font-semibold text-amber-600 hover:underline text-left" title="View details">
+                                            {item.unprocessed}
+                                        </button>
+                                    ) : (
+                                        <span className={`font-semibold ${item.unprocessed > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{item.unprocessed}</span>
+                                    )}
                                     <span className={`font-semibold ${item.available < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{item.available}</span>
                                 </div>
                                 <button
@@ -198,9 +208,20 @@ const GarmentRow = ({
                                             </span>
                                         </td>
                                         <td className="px-5 py-3 text-right">
-                                            <span className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full ${item.unprocessed > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 'text-slate-400'}`}>
-                                                {item.unprocessed}
-                                            </span>
+                                            {item.unprocessed > 0 && onUnprocessedClick ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); onUnprocessedClick(item); }}
+                                                    className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full cursor-pointer hover:ring-2 hover:ring-amber-300 ${item.unprocessed > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 'text-slate-400'}`}
+                                                    title="View unprocessed details"
+                                                >
+                                                    {item.unprocessed}
+                                                </button>
+                                            ) : (
+                                                <span className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full ${item.unprocessed > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 'text-slate-400'}`}>
+                                                    {item.unprocessed}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-3 text-right">
                                             <span className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full ${item.available < 0 ? 'bg-red-50 text-red-700 border border-red-200/50' : 'bg-emerald-50 text-emerald-700 border border-emerald-200/50'}`}>
@@ -257,6 +278,14 @@ export default function DigitalStock() {
     const [newProductEmbroidery, setNewProductEmbroidery] = useState(false);
     const [addingProduct, setAddingProduct] = useState(false);
 
+    // Unprocessed detail modal (where the count comes from; view / edit / clear)
+    const [unprocessedDetail, setUnprocessedDetail] = useState<{ item: InventoryStockItem & { size: string } } | null>(null);
+    const [unprocessedDetailRows, setUnprocessedDetailRows] = useState<UnprocessedDetailRow[]>([]);
+    const [loadingUnprocessed, setLoadingUnprocessed] = useState(false);
+    const [editingRow, setEditingRow] = useState<UnprocessedDetailRow | null>(null);
+    const [editQty, setEditQty] = useState(0);
+    const [savingRow, setSavingRow] = useState(false);
+
     // Schools list for dropdowns
     const [schools, setSchools] = useState<{ id: string; code: string; name: string }[]>([]);
 
@@ -269,10 +298,9 @@ export default function DigitalStock() {
     };
 
     const loadSchools = async () => {
-        if (!supabase) return;
         try {
-            const { data } = await supabase.from('schools').select('id, code, name').order('name');
-            if (data) setSchools(data);
+            const data = await adapter.getSchools();
+            setSchools(data);
         } catch (e) {
             console.error('Failed to load schools', e);
         }
@@ -342,6 +370,61 @@ export default function DigitalStock() {
         setNewTransitStock(item.stock_in_transit || 0);
     };
 
+    const handleUnprocessedClick = async (item: InventoryStockItem & { size: string }) => {
+        setUnprocessedDetail({ item });
+        setUnprocessedDetailRows([]);
+        setLoadingUnprocessed(true);
+        setEditingRow(null);
+        try {
+            const rows = await adapter.getUnprocessedDetails(item.id, item.size);
+            setUnprocessedDetailRows(rows);
+        } catch (e) {
+            console.error('Failed to load unprocessed details', e);
+            showToast('error', 'Failed to load details');
+        } finally {
+            setLoadingUnprocessed(false);
+        }
+    };
+
+    const refreshUnprocessedDetails = async () => {
+        if (!unprocessedDetail) return;
+        const rows = await adapter.getUnprocessedDetails(unprocessedDetail.item.id, unprocessedDetail.item.size);
+        setUnprocessedDetailRows(rows);
+        if (rows.length === 0) {
+            setUnprocessedDetail(null);
+            loadStock();
+        }
+    };
+
+    const handleClearUnprocessed = async (row: UnprocessedDetailRow) => {
+        if (!confirm(`Set quantity to 0 for order #${row.order_number}? This will remove this line from the unprocessed count.`)) return;
+        setSavingRow(true);
+        try {
+            await adapter.updateOrderItemQuantity(row.order_item_id, 0);
+            showToast('success', 'Quantity set to 0');
+            await refreshUnprocessedDetails();
+        } catch (e) {
+            showToast('error', 'Failed to update');
+        } finally {
+            setSavingRow(false);
+        }
+    };
+
+    const handleSaveEditQty = async () => {
+        if (!editingRow || editQty < 0) return;
+        setSavingRow(true);
+        try {
+            await adapter.updateOrderItemQuantity(editingRow.order_item_id, editQty);
+            showToast('success', 'Quantity updated');
+            setEditingRow(null);
+            await refreshUnprocessedDetails();
+        } catch (e) {
+            showToast('error', 'Failed to update');
+        } finally {
+            setSavingRow(false);
+        }
+    };
+
     const submitAdjustment = async () => {
         if (!isAdjusting) return;
         setUpdating(true);
@@ -365,26 +448,19 @@ export default function DigitalStock() {
     };
 
     const handleAddSchool = async () => {
-        if (!supabase || !newSchoolName || !newSchoolCode) return;
+        if (!newSchoolName?.trim() || !newSchoolCode?.trim()) return;
         setAddingSchool(true);
         try {
-            const slug = newSchoolCode.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-            const { error } = await supabase
-                .from('schools')
-                .insert({ name: newSchoolName, code: newSchoolCode.toUpperCase(), slug });
-
-            if (error) {
-                showToast('error', error.code === '23505' ? `Code "${newSchoolCode}" already exists` : error.message);
-                return;
-            }
+            await adapter.createSchool(newSchoolName.trim(), newSchoolCode.trim());
             showToast('success', `Added "${newSchoolName}"`);
             setShowAddSchool(false);
             setNewSchoolName('');
             setNewSchoolCode('');
             await loadSchools();
             await loadStock();
-        } catch (error) {
-            showToast('error', 'Failed to add school');
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Failed to add school';
+            showToast('error', msg);
         } finally {
             setAddingSchool(false);
         }
@@ -394,7 +470,11 @@ export default function DigitalStock() {
         if (!supabase || !newProductName || !newProductSku) return;
         setAddingProduct(true);
         try {
-            const sizes = newProductSizes.split(',').map(s => s.trim()).filter(Boolean);
+            const sizes = newProductSizes
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+                .filter(isValidDigitalStockSize);
             const attributes: any[] = [];
             if (sizes.length > 0) {
                 attributes.push({ name: 'Size', slug: 'pa_size', options: sizes });
@@ -723,6 +803,7 @@ export default function DigitalStock() {
                                                 garment={garment}
                                                 onAdjust={handleAdjustOpen}
                                                 onDeleteProduct={handleDeleteProduct}
+                                                onUnprocessedClick={handleUnprocessedClick}
                                                 isMobile={isMobile}
                                             />
                                         ))}
@@ -835,6 +916,85 @@ export default function DigitalStock() {
                 </div>
             )}
 
+            {/* Unprocessed detail modal — where the count comes from; view / edit / clear */}
+            {unprocessedDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => !loadingUnprocessed && setUnprocessedDetail(null)}>
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-amber-50/50">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <ListOrdered className="w-5 h-5 text-amber-600" />
+                                Unprocessed — {unprocessedDetail.item.name} (Size {unprocessedDetail.item.size})
+                            </h3>
+                            <button onClick={() => setUnprocessedDetail(null)} className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-4 overflow-y-auto flex-1 min-h-0">
+                            <p className="text-sm text-slate-600 mb-3">Open orders that reserve this product/size. Edit quantity or clear to remove from count.</p>
+                            {loadingUnprocessed ? (
+                                <div className="py-8 text-center text-slate-500">Loading...</div>
+                            ) : unprocessedDetailRows.length === 0 ? (
+                                <div className="py-8 text-center text-slate-500">No unprocessed lines.</div>
+                            ) : (
+                                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-100 text-xs text-slate-600 uppercase font-medium">
+                                            <tr>
+                                                <th className="px-3 py-2">Order #</th>
+                                                <th className="px-3 py-2">Status</th>
+                                                <th className="px-3 py-2">Customer</th>
+                                                <th className="px-3 py-2">Student</th>
+                                                <th className="px-3 py-2 text-right">Qty</th>
+                                                <th className="px-3 py-2 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {unprocessedDetailRows.map(row => (
+                                                <tr key={row.order_item_id} className="hover:bg-slate-50">
+                                                    <td className="px-3 py-2 font-medium text-slate-800">{row.order_number}</td>
+                                                    <td className="px-3 py-2 text-slate-600">{row.status}</td>
+                                                    <td className="px-3 py-2 text-slate-600">{row.customer_name}</td>
+                                                    <td className="px-3 py-2 text-slate-600">{row.student_name || '—'}</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {editingRow?.order_item_id === row.order_item_id ? (
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                value={editQty}
+                                                                onChange={(e) => setEditQty(parseInt(e.target.value, 10) || 0)}
+                                                                className="w-16 px-2 py-1 border border-slate-300 rounded text-right"
+                                                            />
+                                                        ) : (
+                                                            <span className="font-semibold">{row.quantity}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {editingRow?.order_item_id === row.order_item_id ? (
+                                                            <div className="flex justify-end gap-1">
+                                                                <button onClick={() => setEditingRow(null)} className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
+                                                                <button onClick={handleSaveEditQty} disabled={savingRow} className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">Save</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex justify-end gap-1">
+                                                                <button onClick={() => { setEditingRow(row); setEditQty(row.quantity); }} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit quantity"><Edit className="w-4 h-4" /></button>
+                                                                <button onClick={() => handleClearUnprocessed(row)} disabled={savingRow} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Set quantity to 0"><Eraser className="w-4 h-4" /></button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50">
+                            <button onClick={() => setUnprocessedDetail(null)} className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Add School Modal */}
             {showAddSchool && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -940,10 +1100,10 @@ export default function DigitalStock() {
                                     type="text"
                                     value={newProductSizes}
                                     onChange={(e) => setNewProductSizes(e.target.value)}
-                                    placeholder="4, 6, 8, 10, 12, 14, S, M, L, XL"
+                                    placeholder="4, 6, 8, 10, 12, 14, 16 (even sizes only)"
                                     className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                                 />
-                                <p className="text-[10px] text-slate-500">Comma-separated. Leave blank for a single-size product.</p>
+                                <p className="text-[10px] text-slate-500">Comma-separated. Numeric sizes: even only (4, 6, 8 … 16). Letter sizes (S, M, L, XL) allowed.</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 <input

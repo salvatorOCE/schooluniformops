@@ -15,7 +15,13 @@ export interface DataAdapter {
     getBulkOrders(): Promise<Order[]>;
     createBulkOrder(
         schoolId: string,
-        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string },
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
+        items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
+    ): Promise<Order>;
+    updateBulkOrder(
+        orderId: string,
+        schoolId: string,
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
         items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
     ): Promise<Order>;
     getExceptions(): Promise<ExceptionOrder[]>;
@@ -73,6 +79,8 @@ export interface DataAdapter {
     getInventoryStock(): Promise<any[]>;
     updateStockOnShelf(productId: string, size: string, newAmount: number): Promise<void>;
     updateStockInTransit(productId: string, size: string, newAmount: number): Promise<void>;
+    getUnprocessedDetails(productId: string, size: string): Promise<import('./types').UnprocessedDetailRow[]>;
+    updateOrderItemQuantity(orderItemId: string, quantity: number): Promise<void>;
 }
 
 // Export the active adapter (mock for now)

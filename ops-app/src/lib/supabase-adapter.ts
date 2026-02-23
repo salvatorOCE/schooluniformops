@@ -13,7 +13,15 @@ import {
 import { DataAdapter } from './data-adapter';
 import { supabase } from './supabase';
 import { Database } from './supabase-types';
-import { Order, SchoolRunGroup, ExceptionOrder, DashboardStats, DeliveryType, OrderStatus, EmbroideryBatch, FixUpRequest } from './types';
+import { Order, SchoolRunGroup, ExceptionOrder, DashboardStats, DeliveryType, OrderStatus, EmbroideryBatch, FixUpRequest, UnprocessedDetailRow } from './types';
+
+/** Garment sizes in digital stock are even only: 4, 6, 8, 10, 12, 14, 16. Letter sizes (S, M, L, XL) allowed. */
+export function isValidDigitalStockSize(size: string): boolean {
+    const t = String(size).trim();
+    const n = parseInt(t, 10);
+    if (Number.isNaN(n)) return true; // non-numeric (S, M, L, XL)
+    return n >= 4 && n <= 16 && n % 2 === 0; // 4, 6, 8, 10, 12, 14, 16 only
+}
 
 export class SupabaseAdapter implements DataAdapter {
     async getPackingSessions(): Promise<SchoolRunGroup[]> {
@@ -60,28 +68,33 @@ export class SupabaseAdapter implements DataAdapter {
 
     async createSchool(name: string, code: string): Promise<import('./types').School> {
         if (!supabase) throw new Error("Supabase not initialized");
+        const slug = code.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'school';
         const { data, error } = await supabase
             .from('schools')
-            .insert({ name, code })
+            .insert({ name, code: code.toUpperCase().trim(), slug })
             .select()
             .single();
 
         if (error) {
+            const msg = error.message || (error as any).details || (error as any).hint || JSON.stringify(error);
             console.error('Failed to create school:', error);
-            throw new Error(`Failed to create school: ${error.message}`);
+            if ((error as any).code === '23505') {
+                throw new Error(`A school with code "${code}" already exists. Use a unique code.`);
+            }
+            throw new Error(`Failed to create school: ${msg}`);
         }
         return data as import('./types').School;
     }
 
     async createBulkOrder(
         schoolId: string,
-        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string },
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
         items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
     ): Promise<Order> {
         if (!supabase) throw new Error("Supabase not initialized");
 
-        // 1. Generate Fake Woo ID (negative) and Order Number
-        const fakeWooId = -Date.now(); // Guaranteed negative and unique
+        // 1. Generate Fake Woo ID (negative, fits PostgreSQL integer 32-bit range)
+        const fakeWooId = -(Date.now() % 2147483648);
         const bulkOrderNumber = orderDetails.orderNumber || `BULK-${schoolId.substring(0, 4).toUpperCase()}-${Math.floor(Math.random() * 1000)}`;
 
         // 2. Fetch the school data for caching on the order
@@ -91,17 +104,23 @@ export class SupabaseAdapter implements DataAdapter {
             .eq('id', schoolId)
             .single();
 
+        const meta: Record<string, unknown> = {};
+        if (orderDetails.requestedAt) meta.order_requested_at = orderDetails.requestedAt;
+        if (orderDetails.partialDelivery && orderDetails.partialDelivery.length > 0) meta.partial_delivery = orderDetails.partialDelivery;
+        const metaPayload = Object.keys(meta).length > 0 ? meta : undefined;
+
         // 3. Insert Order
         const { data: insertedOrder, error: orderError } = await supabase
             .from('orders')
             .insert({
-                woo_order_id: fakeWooId, // Assuming DB schema has been updated to let this be unique per row
+                woo_order_id: fakeWooId,
                 order_number: bulkOrderNumber,
                 status: orderDetails.status || 'Processing',
                 customer_name: orderDetails.customerName || 'School Admin',
                 student_name: orderDetails.studentName || 'BULK_STOCK',
                 school_id: schoolId,
-                delivery_method: 'SCHOOL'
+                delivery_method: 'SCHOOL',
+                ...(metaPayload && { meta: metaPayload })
             })
             .select('*')
             .single();
@@ -131,6 +150,67 @@ export class SupabaseAdapter implements DataAdapter {
             .from('orders')
             .select(`*, schools (code, name), order_items (*)`)
             .eq('id', insertedOrder.id)
+            .single();
+
+        return this.mapOrder(fullOrder as any);
+    }
+
+    async updateBulkOrder(
+        orderId: string,
+        schoolId: string,
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
+        items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
+    ): Promise<Order> {
+        if (!supabase) throw new Error("Supabase not initialized");
+
+        const orderUpdates: Record<string, unknown> = { school_id: schoolId };
+        if (orderDetails.orderNumber !== undefined) orderUpdates.order_number = orderDetails.orderNumber;
+        if (orderDetails.customerName !== undefined) orderUpdates.customer_name = orderDetails.customerName;
+        if (orderDetails.studentName !== undefined) orderUpdates.student_name = orderDetails.studentName;
+        if (orderDetails.status !== undefined) orderUpdates.status = orderDetails.status;
+        if (orderDetails.requestedAt !== undefined || orderDetails.partialDelivery !== undefined) {
+            orderUpdates.meta = {
+                order_requested_at: orderDetails.requestedAt || undefined,
+                partial_delivery: orderDetails.partialDelivery ?? []
+            };
+        }
+
+        const { error: orderError } = await supabase
+            .from('orders')
+            .update(orderUpdates)
+            .eq('id', orderId);
+
+        if (orderError) throw new Error(`Failed to update bulk order: ${orderError.message}`);
+
+        const { error: deleteError } = await supabase
+            .from('order_items')
+            .delete()
+            .eq('order_id', orderId);
+
+        if (deleteError) throw new Error(`Failed to clear order items: ${deleteError.message}`);
+
+        const orderItemsToInsert = items.map(item => ({
+            order_id: orderId,
+            product_id: item.productId || null,
+            name: item.productName,
+            sku: item.sku,
+            quantity: item.quantity,
+            size: item.size || null,
+            requires_embroidery: false,
+            unit_price: item.price ?? 0
+        }));
+
+        if (orderItemsToInsert.length > 0) {
+            const { error: itemsError } = await supabase
+                .from('order_items')
+                .insert(orderItemsToInsert);
+            if (itemsError) throw new Error(`Failed to update order items: ${itemsError.message}`);
+        }
+
+        const { data: fullOrder } = await supabase
+            .from('orders')
+            .select(`*, schools (code, name), order_items (*)`)
+            .eq('id', orderId)
             .single();
 
         return this.mapOrder(fullOrder as any);
@@ -372,6 +452,7 @@ export class SupabaseAdapter implements DataAdapter {
             order_number: row.order_number,
             parent_name: row.customer_name,
             student_name: row.student_name,
+            school_id: row.school_id || null,
             school_code: row.schools?.code || null,
             school_name: row.schools?.name || 'Unknown School',
             delivery_type: row.delivery_method,
@@ -384,10 +465,12 @@ export class SupabaseAdapter implements DataAdapter {
                 quantity: i.quantity,
                 size: i.size || undefined,
                 requires_embroidery: i.requires_embroidery,
-                embroidery_status: i.embroidery_status === 'DONE' ? 'DONE' : 'PENDING'
+                embroidery_status: i.embroidery_status === 'DONE' ? 'DONE' : 'PENDING',
+                unit_price: (i as any).unit_price != null ? Number((i as any).unit_price) : undefined
             })),
             created_at: row.created_at,
             paid_at: row.paid_at || row.created_at,
+            meta: (row as any).meta && typeof (row as any).meta === 'object' ? (row as any).meta : undefined,
             embroidery_done_at: row.embroidery_done_at || undefined,
             packed_at: row.packed_at || undefined,
             dispatched_at: row.dispatched_at || undefined,
@@ -930,6 +1013,9 @@ export class SupabaseAdapter implements DataAdapter {
             // Fallback if no sizes found
             if (sizes.length === 0) sizes = ['-'];
 
+            // Digital stock: only even numeric sizes 4–16 (4,6,8,10,12,14,16) and letter sizes
+            sizes = sizes.filter((s: string) => isValidDigitalStockSize(s));
+
             const shelfData = p.stock_on_shelf || {};
             const transitData = p.stock_in_transit || {};
 
@@ -987,6 +1073,62 @@ export class SupabaseAdapter implements DataAdapter {
             if (writeErr) { console.error('[Stock] Write error (transit):', writeErr); throw new Error(writeErr.message); }
             console.log('[Stock] Transit updated:', productId, size, newAmount);
         }
+    }
+
+    async getUnprocessedDetails(productId: string, size: string): Promise<UnprocessedDetailRow[]> {
+        if (!supabase) return [];
+        const { data, error } = await supabase
+            .from('order_items')
+            .select(`
+                id,
+                order_id,
+                quantity,
+                sku,
+                name,
+                size,
+                orders!inner (
+                    order_number,
+                    status,
+                    customer_name,
+                    student_name
+                )
+            `)
+            .eq('product_id', productId)
+            .in('orders.status', ['Processing', 'Embroidery', 'Distribution', 'In Production']);
+
+        if (error) {
+            console.error('getUnprocessedDetails:', error);
+            return [];
+        }
+
+        const norm = (s: string | null) => (s == null || s === '') ? '-' : s;
+        const rows: UnprocessedDetailRow[] = (data || [])
+            .filter((item: any) => norm(item.size) === size)
+            .map((item: any) => {
+                const o = item.orders;
+                return {
+                    order_item_id: item.id,
+                    order_id: item.order_id,
+                    order_number: o?.order_number ?? '—',
+                    status: o?.status ?? '—',
+                    customer_name: o?.customer_name ?? '—',
+                    student_name: o?.student_name ?? null,
+                    quantity: item.quantity ?? 0,
+                    sku: item.sku ?? '—',
+                    name: item.name ?? '—',
+                    size: item.size
+                };
+            });
+        return rows;
+    }
+
+    async updateOrderItemQuantity(orderItemId: string, quantity: number): Promise<void> {
+        if (!supabase) return;
+        const { error } = await supabase
+            .from('order_items')
+            .update({ quantity })
+            .eq('id', orderItemId);
+        if (error) throw new Error(error.message || 'Failed to update quantity');
     }
 
     // --- FIX UPS ---

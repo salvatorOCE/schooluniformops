@@ -1189,6 +1189,14 @@ export class MockAdapter implements DataAdapter {
         console.log(`Mock updated transit stock for ${productId} size ${size} to ${newAmount}`);
     }
 
+    async getUnprocessedDetails(_productId: string, _size: string): Promise<import('./types').UnprocessedDetailRow[]> {
+        return [];
+    }
+
+    async updateOrderItemQuantity(_orderItemId: string, _quantity: number): Promise<void> {
+        console.log('Mock updateOrderItemQuantity (no-op)');
+    }
+
     async getSchools(): Promise<import('./types').School[]> {
         return [
             { id: 'STMARY', code: 'STMARY', name: "St Mary's College" },
@@ -1232,10 +1240,13 @@ export class MockAdapter implements DataAdapter {
 
     async createBulkOrder(
         schoolId: string,
-        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string },
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
         items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
     ): Promise<Order> {
         const orderId = `bulk-${Date.now()}`;
+        const meta: Order['meta'] = {};
+        if (orderDetails.requestedAt) meta.order_requested_at = orderDetails.requestedAt;
+        if (orderDetails.partialDelivery?.length) meta.partial_delivery = orderDetails.partialDelivery;
         const newOrder: Order = {
             id: orderId,
             woo_order_id: -Date.now(),
@@ -1258,9 +1269,41 @@ export class MockAdapter implements DataAdapter {
                 embroidery_status: 'PENDING'
             })),
             created_at: new Date().toISOString(),
-            paid_at: new Date().toISOString()
+            paid_at: new Date().toISOString(),
+            ...(Object.keys(meta).length > 0 && { meta })
         };
         mockOrders.push(newOrder);
         return newOrder;
+    }
+
+    async updateBulkOrder(
+        orderId: string,
+        _schoolId: string,
+        orderDetails: { orderNumber?: string, customerName?: string, studentName?: string, status?: string, requestedAt?: string, partialDelivery?: number[] },
+        items: { productId?: string, productName: string, sku: string, size: string, quantity: number, price?: number }[]
+    ): Promise<Order> {
+        const order = mockOrders.find(o => o.id === orderId);
+        if (!order) throw new Error(`Order ${orderId} not found`);
+        if (orderDetails.orderNumber !== undefined) order.order_number = orderDetails.orderNumber;
+        if (orderDetails.customerName !== undefined) order.parent_name = orderDetails.customerName;
+        if (orderDetails.studentName !== undefined) order.student_name = orderDetails.studentName;
+        if (orderDetails.status !== undefined) order.order_status = orderDetails.status;
+        if (orderDetails.requestedAt !== undefined || orderDetails.partialDelivery !== undefined) {
+            order.meta = {
+                order_requested_at: orderDetails.requestedAt ?? order.meta?.order_requested_at,
+                partial_delivery: orderDetails.partialDelivery ?? order.meta?.partial_delivery ?? []
+            };
+        }
+        order.items = items.map((i, idx) => ({
+            id: `${orderId}-item-${idx}`,
+            product_name: i.productName,
+            sku: i.sku,
+            size: i.size,
+            quantity: i.quantity,
+            requires_embroidery: false,
+            embroidery_status: 'PENDING' as const,
+            unit_price: i.price
+        }));
+        return order;
     }
 }
