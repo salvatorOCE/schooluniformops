@@ -170,7 +170,9 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                 setParseError(errMsg);
                 return;
             }
-            const parsed = (data.items || []).map((item: { productName?: string; size?: string; quantity?: number; sku?: string; price?: number }, i: number) => ({
+            type ParsedItem = { productName?: string; size?: string; quantity?: number; sku?: string; price?: number };
+            const rawItems = (data.items || []) as ParsedItem[];
+            const parsed = rawItems.map((item, i) => ({
                 id: `parsed-${Date.now()}-${i}`,
                 productId: '',
                 productName: String(item.productName ?? ''),
