@@ -1,0 +1,10 @@
+# Netlify build for Next.js (ops-app)
+# If your repo root is the ops-app folder, this is correct.
+# If repo root is the parent (e.g. School Uniform Solutions), set Base directory to "ops-app" in Netlify UI.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

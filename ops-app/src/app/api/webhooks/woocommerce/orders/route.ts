@@ -1,0 +1,142 @@
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export async function POST(request: Request) {
+    if (!supabaseAdmin) {
+        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    try {
+        const order = await request.json();
+        console.log(`Received webhook for order: ${order.id} - ${order.number}`);
+
+        // 1. Identify School Name from Items
+        let schoolId = null;
+        if (order.line_items && order.line_items.length > 0) {
+            // Get WooCommerce Product IDs
+            const wooProductIds = order.line_items.map((item: any) => item.product_id);
+
+            // Find first product that has a school assigned in our DB
+            const { data: matchedProducts } = await supabaseAdmin
+                .from('products')
+                .select('school_id')
+                .in('woocommerce_id', wooProductIds)
+                .not('school_id', 'is', null)
+                .limit(1);
+
+            if (matchedProducts && matchedProducts.length > 0) {
+                schoolId = matchedProducts[0].school_id;
+            }
+        }
+
+        let deliveryType = 'HOME';
+        // Map shipping method to Delivery Type
+        if (order.shipping_lines && order.shipping_lines.length > 0) {
+            const method = order.shipping_lines[0].method_title.toUpperCase();
+            if (method.includes('TERM')) deliveryType = 'SCHOOL';
+            if (method.includes('PICKUP') || method.includes('COLLECT')) deliveryType = 'STORE';
+        }
+
+        // Student name is often in shipping (billing is usually the parent)
+        const studentName = order.shipping?.first_name
+            ? `${order.shipping.first_name} ${order.shipping.last_name}`
+            : `${order.billing?.first_name} ${order.billing?.last_name}`;
+        const parentName = `${order.billing?.first_name} ${order.billing?.last_name}`;
+
+        // Map WooCommerce status to internal Ops App status
+        let status = 'Processing';
+        const wooStatus = order.status.toLowerCase();
+
+        const statusMap: Record<string, string> = {
+            'pending': 'Pending Payment',
+            'processing': 'Processing',
+            'waiting': 'Processing',
+            'supplier-ordered': 'Processing',
+            'stock-arrived': 'Processing',
+            'in-production': 'In Production',
+            'embroidery': 'Embroidery',
+            'distribution': 'Distribution',
+            'ready-to-ship': 'Distribution',
+            'packed': 'Packed',
+            'shipped': 'Shipped',
+            'completed': 'Completed',
+            'on-hold': 'On-Hold',
+            'cancelled': 'Cancelled',
+            'refunded': 'Refunded',
+            'failed': 'Failed'
+        };
+
+        if (statusMap[wooStatus]) {
+            status = statusMap[wooStatus];
+        }
+
+        // 2. Upsert Order
+        const { data: upsertedOrder, error: orderError } = await supabaseAdmin
+            .from('orders')
+            .upsert({
+                woo_order_id: order.id,
+                order_number: order.number,
+                status: status,
+                school_id: schoolId,
+                delivery_method: deliveryType,
+                student_name: studentName,
+                customer_name: parentName,
+            }, { onConflict: 'woo_order_id' })
+            .select()
+            .single();
+
+        if (orderError) throw orderError;
+
+        // 3. Handle Line Items
+        // First delete existing items for this order to handle updates (resync)
+        await supabaseAdmin.from('order_items').delete().eq('order_id', upsertedOrder.id);
+
+        if (order.line_items && order.line_items.length > 0) {
+            const itemsToInsert = [];
+
+            for (const item of order.line_items) {
+                // Resolve product UUID
+                let productId = null;
+                if (item.product_id) {
+                    const { data: prod } = await supabaseAdmin
+                        .from('products')
+                        .select('id')
+                        .eq('woocommerce_id', item.product_id)
+                        .single();
+                    if (prod) productId = prod.id;
+                }
+
+                // Extract size from metadata
+                let size = null;
+                if (item.meta_data) {
+                    const sizeMeta = item.meta_data.find((m: any) => m.key.toLowerCase().includes('size') || m.key === 'pa_size');
+                    if (sizeMeta) size = sizeMeta.value;
+                }
+
+                itemsToInsert.push({
+                    order_id: upsertedOrder.id,
+                    product_id: productId,
+                    name: item.name || 'Unknown Product',
+                    sku: item.sku || `WOO-${item.product_id || 'UNKNOWN'}`,
+                    quantity: item.quantity || 1,
+                    size: size,
+                    unit_price: parseFloat(item.price) || 0,
+                    total_price: parseFloat(item.total) || 0,
+                });
+            }
+
+            if (itemsToInsert.length > 0) {
+                const { error: itemsError } = await supabaseAdmin
+                    .from('order_items')
+                    .insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+            }
+        }
+
+        return NextResponse.json({ success: true, id: upsertedOrder.id });
+    } catch (error: any) {
+        console.error('Webhook Processing Error:', error);
+        return NextResponse.json({ error: error.message || 'Processing failed' }, { status: 500 });
+    }
+}

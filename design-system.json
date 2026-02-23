@@ -1,0 +1,57 @@
+{
+    "meta": {
+        "source": "https://schooluniformsolutions.com.au",
+        "extracted_at": "2026-02-07T23:30:00+10:30"
+    },
+    "brand": {
+        "name": "School Uniform Solutions",
+        "tone": "Professional, Trustworthy, Mission-Oriented",
+        "description": "Deep forest greens combined with vibrant accents suggests stability and growth."
+    },
+    "colors": {
+        "primary": {
+            "main": "#19966D",
+            "hover": "#1E9875",
+            "light": "#31B98E",
+            "contrast": "#FFFFFF"
+        },
+        "secondary": {
+            "main": "#002D2B",
+            "contrast": "#FFFFFF"
+        },
+        "neutral": {
+            "background": "#FFFFFF",
+            "surface": "#F9F3EE",
+            "text_primary": "#141414",
+            "text_secondary": "#555555"
+        }
+    },
+    "typography": {
+        "font_family": {
+            "primary": "Poppins, Helvetica, Arial, sans-serif",
+            "secondary": "Poppins, Helvetica, Arial, sans-serif"
+        },
+        "weights": {
+            "regular": 400,
+            "medium": 500,
+            "bold": 700
+        },
+        "base_size": "16px"
+    },
+    "components": {
+        "buttons": {
+            "primary": {
+                "background": "#19966D",
+                "color": "#FFFFFF",
+                "borderRadius": "50px",
+                "padding": "10px 20px",
+                "fontWeight": "700"
+            }
+        },
+        "layout": {
+            "container_width": "1200px",
+            "gutter": "30px",
+            "section_spacing": "60px"
+        }
+    }
+}
