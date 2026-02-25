@@ -144,7 +144,7 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
         }
     };
 
-    const getItemSize = (item: WooOrder['line_items'] extends (infer I)[] ? I : never) => {
+    const getItemSize = (item: any) => {
         const sizeMeta = item?.meta_data?.find((m: any) => m.key === 'pa_size' || m.key === 'Size' || (m.display_key && m.display_key.toLowerCase().includes('size')));
         return sizeMeta?.value ?? sizeMeta?.display_value ?? '—';
     };
