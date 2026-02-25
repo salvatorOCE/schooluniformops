@@ -5,14 +5,17 @@ import { useState } from 'react';
 
 interface PackingSessionViewProps {
     schoolName: string;
+    schoolCode: string;
     orders: Order[];
     onPack: (orderId: string) => void;
     onBack: () => void;
     onReportIssue: (order: Order) => void;
-    onUpdateOrder?: (orderId: string, items: any[]) => Promise<void>; // Optional for now until wired up in page
+    onUpdateOrder?: (orderId: string, items: any[]) => Promise<void>;
+    /** When user clicks "Finish pack out": packed orders in this session, for manifest PDF + saving to Order Tracking */
+    onFinishPackOut?: (packedOrders: Order[], schoolCode: string, schoolName: string) => void;
 }
 
-export function PackingSessionView({ schoolName, orders, onPack, onBack, onReportIssue, onUpdateOrder }: PackingSessionViewProps) {
+export function PackingSessionView({ schoolName, schoolCode, orders, onPack, onBack, onReportIssue, onUpdateOrder, onFinishPackOut }: PackingSessionViewProps) {
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const [checkedState, setCheckedState] = useState<Record<string, Record<string, boolean>>>({});
     const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
@@ -28,6 +31,8 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
 
     // Sort: Alphabetical by student name
     const toPackOrders = [...uniqueOrders].sort((a, b) => (a.student_name || '').localeCompare(b.student_name || ''));
+
+    const isCompleted = (orderId: string) => completedOrders.some(o => o.id === orderId);
 
     const toggleExpand = (orderId: string) => {
         if (editingOrderId === orderId) return; // Don't collapse if editing
@@ -124,9 +129,13 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
                     {toPackOrders.map((order) => {
                         const isExpanded = expandedIds.includes(order.id);
                         const checks = checkedState[order.id] || {};
+                        const completed = isCompleted(order.id);
 
                         return (
-                            <div key={order.id} className={`transition-all ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50'}`}>
+                            <div
+                                key={order.id}
+                                className={`transition-all ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50'} ${completed ? 'opacity-60 bg-slate-50' : ''}`}
+                            >
                                 {/* Main Row */}
                                 <div className="flex items-start p-4 gap-4 cursor-pointer" onClick={() => toggleExpand(order.id)}>
                                     <div className="pt-1">
@@ -162,13 +171,14 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
 
                                     <div className="pt-0.5">
                                         <button
-                                            className={`btn btn-xs ${isExpanded ? 'btn-ghost text-slate-400' : 'btn-primary'}`}
+                                            className={`btn btn-xs ${completed ? 'btn-ghost text-slate-400' : (isExpanded ? 'btn-ghost text-slate-400' : 'btn-primary')}`}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 toggleExpand(order.id);
                                             }}
+                                            disabled={false}
                                         >
-                                            {isExpanded ? '▼' : 'Pack'}
+                                            {completed ? 'Done' : (isExpanded ? '▼' : 'Pack')}
                                         </button>
                                     </div>
                                 </div>
@@ -256,7 +266,7 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
                                                 })}
                                             </div>
 
-                                            {editingOrderId !== order.id && (
+                                            {!completed && editingOrderId !== order.id && (
                                                 <>
                                                     <div className="h-px bg-slate-100 my-2" />
 
@@ -303,6 +313,17 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
                                                     </div>
                                                 </>
                                             )}
+
+                                            {completed && (
+                                                <div className="pt-2 flex items-center justify-between">
+                                                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded">
+                                                        Packed in this session
+                                                    </span>
+                                                    <span className="text-[11px] text-slate-500">
+                                                        You can still expand to review the items.
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -312,7 +333,21 @@ export function PackingSessionView({ schoolName, orders, onPack, onBack, onRepor
                 </div>
             </div>
 
-            {/* Completed Orders Section removed per user request */}
+            {/* Finish pack out: generate manifest PDF and save to Order Tracking */}
+            {completedOrders.length > 0 && onFinishPackOut && (
+                <div className="sticky bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-6 py-4 flex items-center justify-between rounded-b-xl shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+                    <span className="text-sm font-medium text-slate-600">
+                        {completedOrders.length} order{completedOrders.length !== 1 ? 's' : ''} packed this session
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => onFinishPackOut(completedOrders, schoolCode, schoolName)}
+                        className="btn btn-primary px-6 py-2.5 font-semibold"
+                    >
+                        Complete Pack out
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

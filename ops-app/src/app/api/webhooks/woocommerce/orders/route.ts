@@ -70,6 +70,10 @@ export async function POST(request: Request) {
             status = statusMap[wooStatus];
         }
 
+        // Use WooCommerce order date placed and date paid (not webhook receive time)
+        const orderDateCreated = order.date_created_gmt || order.date_created;
+        const orderDatePaid = order.date_paid_gmt || order.date_paid || null;
+
         // 2. Upsert Order
         const { data: upsertedOrder, error: orderError } = await supabaseAdmin
             .from('orders')
@@ -81,6 +85,8 @@ export async function POST(request: Request) {
                 delivery_method: deliveryType,
                 student_name: studentName,
                 customer_name: parentName,
+                created_at: orderDateCreated || undefined,
+                paid_at: orderDatePaid || undefined,
             }, { onConflict: 'woo_order_id' })
             .select()
             .single();

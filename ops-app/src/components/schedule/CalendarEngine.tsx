@@ -43,6 +43,9 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
     const calendarEvents = events.map(evt => {
         // Find staff color if assigned
         const assignedStaff = staff.filter(s => evt.staff_ids.includes(s.id));
+        const start = evt.start_date;
+        // FullCalendar needs an end for resizable time events; default to +1h if missing
+        const end = evt.end_date || new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString();
 
         // Base Colors
         let colorKey = 'slate';
@@ -80,8 +83,8 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
         return {
             id: evt.id,
             title: evt.title,
-            start: evt.start_date,
-            end: evt.end_date,
+            start,
+            end,
             backgroundColor: 'transparent', // We handle BG in render for transparency
             borderColor: 'transparent',
             extendedProps: {
@@ -123,6 +126,13 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
                 <div className="flex items-center gap-1.5 text-slate-500 mt-1 text-[10px] font-medium tracking-wide">
                     {eventInfo.timeText}
                 </div>
+
+                {/* Notes */}
+                {extendedProps.notes && (
+                    <div className="mt-1.5 text-[10px] text-slate-500 line-clamp-2 break-words">
+                        {extendedProps.notes}
+                    </div>
+                )}
 
                 {/* Footer: Staff & Status */}
                 <div className="mt-auto pt-2 flex items-center justify-between">
@@ -215,9 +225,9 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
                     letter-spacing: 0.05em;
                 }
                 
-                /* Grid Styling */
-                .fc-theme-standard td { border: 1px solid #f8fafc; } /* Ultra subtle */
-                .fc-timegrid-slot { height: 3.5rem; } 
+                /* Grid Styling - hour blocks (sized between compact and large) */
+                .fc-theme-standard td { border: 1px solid #f8fafc; }
+                .fc-timegrid-slot { height: 6rem !important; min-height: 6rem !important; }
                 .fc-timegrid-slot-label-cushion { 
                     font-size: 11px; 
                     color: #94a3b8; 
@@ -227,11 +237,38 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
                 .fc-timegrid-now-indicator-line { border-color: #ef4444; border-width: 2px; }
                 .fc-timegrid-now-indicator-arrow { border-color: #ef4444; border-width: 6px 0 6px 7px; }
                 
-                /* Event Container */
+                /* Event Container - fill full width of day column */
+                .fc-timegrid-event-harness {
+                    left: 0 !important;
+                    right: 0 !important;
+                    margin: 0 2px !important;
+                }
+                .fc-timegrid-event-harness > .fc-timegrid-event {
+                    left: 0 !important;
+                    right: 0 !important;
+                    width: 100% !important;
+                }
                 .fc-event { 
                     border: none !important;
                     background: transparent !important;
                     box-shadow: none !important;
+                    margin: 0 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                }
+                /* Resize handles: visible grip so users can elongate/shorten events */
+                .fc-event .fc-event-resizer {
+                    display: block !important;
+                    height: 10px !important;
+                    min-height: 10px !important;
+                    cursor: ns-resize !important;
+                    background: rgba(0,0,0,0.06) !important;
+                }
+                .fc-event .fc-event-resizer:hover {
+                    background: rgba(99, 102, 241, 0.2) !important;
+                }
+                .fc-event .fc-event-resizer-start {
+                    top: 0 !important;
                 }
                 
                 /* Today Highlight */
@@ -253,14 +290,17 @@ export const CalendarEngine = forwardRef<CalendarRef, CalendarEngineProps>(({
                     right: 'dayGridMonth,timeGridWeek,timeGridDay'
                 }}
                 editable={true}
+                eventResizableFromStart={true}
                 droppable={true}
                 selectable={true}
-                slotMinTime="06:00:00"
-                slotMaxTime="20:00:00"
+                slotMinTime="07:00:00"
+                slotMaxTime="18:00:00"
                 allDaySlot={false}
-                slotDuration="00:15:00"
+                slotDuration="01:00:00"
                 snapDuration="00:15:00"
                 height="100%"
+                contentHeight={1100}
+                expandRows={true}
                 events={calendarEvents}
                 eventContent={renderEventContent}
                 eventDrop={(info) => {

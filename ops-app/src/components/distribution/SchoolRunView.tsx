@@ -69,7 +69,7 @@ export function SchoolRunView({ batches, onPack, onPackSchoolInfo, onDispatchRun
                                 }}
                                 className="btn bg-green-600 hover:bg-green-700 text-white border-none px-4 py-2 rounded-lg text-sm font-medium shadow-sm"
                             >
-                                Dispatch Run
+                                Order Delivered &amp; Complete
                             </button>
                             <span className={`transform transition-transform ${expandedSchool === batch.school_code ? 'rotate-180' : ''}`}>
                                 ▼

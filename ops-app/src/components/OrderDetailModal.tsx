@@ -2,7 +2,7 @@
 
 import { Order, OrderStatus, SystemEvent } from '@/lib/types';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
-import { X, User, ShoppingBag, Truck } from 'lucide-react';
+import { X, User, ShoppingBag, Truck, ImageIcon } from 'lucide-react';
 import { OrderTimeline } from '@/components/history/OrderTimeline';
 import { MockAdapter } from '@/lib/mock-adapter';
 import { useEffect, useState } from 'react';
@@ -17,12 +17,27 @@ interface OrderDetailModalProps {
 
 export function OrderDetailModal({ order, onClose, isOpen }: OrderDetailModalProps) {
     const [events, setEvents] = useState<SystemEvent[]>([]);
+    const [itemImages, setItemImages] = useState<Record<string, { front: string | null; back: string | null }>>({});
 
     useEffect(() => {
         if (isOpen && order) {
             adapter.getSystemEvents(order.id).then(setEvents);
+            fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(order.id)}`)
+                .then((res) => res.ok ? res.json() : { items: [] })
+                .then((data: { items?: { order_item_id: string; image_front_url: string | null; image_back_url: string | null }[] }) => {
+                    const map: Record<string, { front: string | null; back: string | null }> = {};
+                    (data.items || []).forEach((row) => {
+                        map[row.order_item_id] = {
+                            front: row.image_front_url ?? null,
+                            back: row.image_back_url ?? null
+                        };
+                    });
+                    setItemImages(map);
+                })
+                .catch(() => setItemImages({}));
         } else {
             setEvents([]);
+            setItemImages({});
         }
     }, [isOpen, order]);
 
@@ -81,33 +96,55 @@ export function OrderDetailModal({ order, onClose, isOpen }: OrderDetailModalPro
                     {/* Items Section */}
                     <section>
                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Order Items</h3>
-                        <div className="border border-slate-200 rounded-lg overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 text-left">
-                                    <tr>
-                                        <th className="px-3 py-2">Item</th>
-                                        <th className="px-3 py-2">SKU</th>
-                                        <th className="px-3 py-2 text-center">Size</th>
-                                        <th className="px-3 py-2 text-center">Qty</th>
-                                        <th className="px-3 py-2">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {order.items.map((item, idx) => (
-                                        <tr key={idx}>
-                                            <td className="px-3 py-2 font-medium text-slate-800">{item.product_name}</td>
-                                            <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.sku}</td>
-                                            <td className="px-3 py-2 text-center">{item.size}</td>
-                                            <td className="px-3 py-2 text-center font-bold">{item.quantity}</td>
-                                            <td className="px-3 py-2">
-                                                <span className={`text-xs px-1.5 py-0.5 rounded ${item.requires_embroidery ? (item.embroidery_status === 'DONE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700') : 'bg-slate-100 text-slate-500'}`}>
-                                                    {item.requires_embroidery ? (item.embroidery_status || 'PENDING') : 'NO EMB'}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="space-y-4">
+                            {order.items.map((item, idx) => {
+                                const images = itemImages[item.id] || { front: null, back: null };
+                                const hasImages = images.front || images.back;
+                                return (
+                                    <div key={item.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+                                        <table className="w-full text-sm">
+                                            <tbody className="divide-y divide-slate-100">
+                                                <tr>
+                                                    <td className="px-3 py-2 font-medium text-slate-800">{item.product_name}</td>
+                                                    <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.sku}</td>
+                                                    <td className="px-3 py-2 text-center">{item.size}</td>
+                                                    <td className="px-3 py-2 text-center font-bold">{item.quantity}</td>
+                                                    <td className="px-3 py-2">
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded ${item.requires_embroidery ? (item.embroidery_status === 'DONE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700') : 'bg-slate-100 text-slate-500'}`}>
+                                                            {item.requires_embroidery ? (item.embroidery_status || 'PENDING') : 'NO EMB'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        {hasImages && (
+                                            <div className="px-3 pb-3 pt-1 border-t border-slate-100 bg-slate-50/50">
+                                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                                    <ImageIcon className="w-3 h-3" /> Garment reference
+                                                </p>
+                                                <div className="flex gap-3 flex-wrap">
+                                                    {images.front && (
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[10px] font-medium text-slate-500 mb-1">Front</span>
+                                                            <a href={images.front} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm hover:border-slate-300 transition-colors">
+                                                                <img src={images.front} alt={`${item.product_name} front`} className="h-24 w-auto object-contain max-w-[120px]" />
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                    {images.back && (
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[10px] font-medium text-slate-500 mb-1">Back</span>
+                                                            <a href={images.back} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm hover:border-slate-300 transition-colors">
+                                                                <img src={images.back} alt={`${item.product_name} back`} className="h-24 w-auto object-contain max-w-[120px]" />
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </section>
 

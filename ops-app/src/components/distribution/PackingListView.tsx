@@ -4,7 +4,7 @@ import { SchoolRunGroup } from '@/lib/types';
 
 interface PackingListViewProps {
     sessions: SchoolRunGroup[];
-    onOpenSession: (schoolCode: string) => void;
+    onOpenSession: (session: SchoolRunGroup) => void;
 }
 
 export function PackingListView({ sessions, onOpenSession }: PackingListViewProps) {
@@ -24,7 +24,7 @@ export function PackingListView({ sessions, onOpenSession }: PackingListViewProp
                 <div
                     key={session.school_code}
                     className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden"
-                    onClick={() => onOpenSession(session.school_code)}
+                    onClick={() => onOpenSession(session)}
                 >
                     <div className="p-6">
                         <div className="flex justify-between items-start mb-4">

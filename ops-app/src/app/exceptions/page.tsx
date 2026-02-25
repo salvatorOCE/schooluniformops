@@ -9,6 +9,9 @@ import { AgeBadge } from '@/components/AgeBadge';
 import { GlobalOrderSearch } from '@/components/exceptions/GlobalOrderSearch';
 import { FixUpList } from '@/components/exceptions/FixUpList';
 import { FixUpCreationModal } from '@/components/exceptions/FixUpCreationModal';
+import { FixUpDetailModal } from '@/components/exceptions/FixUpDetailModal';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { AlertTriangle, Wrench, CheckCircle } from 'lucide-react';
 
 type Tab = 'EXCEPTIONS' | 'FIX_UPS';
 
@@ -22,6 +25,7 @@ export default function ExceptionsPage() {
     // Modal States
     const [resolveOrder, setResolveOrder] = useState<ExceptionOrder | null>(null);
     const [createFixUpOrder, setCreateFixUpOrder] = useState<Order | null>(null);
+    const [selectedFixUp, setSelectedFixUp] = useState<FixUpRequest | null>(null);
 
     const loadData = async () => {
         setLoading(true);
@@ -44,131 +48,173 @@ export default function ExceptionsPage() {
     };
 
     if (loading) {
-        return <div className="animate-pulse p-8">Loading workspace...</div>;
+        return (
+            <div className="max-w-4xl mx-auto px-4 md:px-6 -mt-8 pt-8 space-y-6">
+                <div className="border-b border-slate-200 pb-6">
+                    <Skeleton className="h-8 w-64 mb-2" />
+                    <Skeleton className="h-4 w-96" />
+                </div>
+                <Skeleton className="h-14 w-full max-w-2xl rounded-xl" />
+                <div className="flex gap-2 pt-2">
+                    <Skeleton className="h-10 w-40 rounded-lg" />
+                    <Skeleton className="h-10 w-32 rounded-lg" />
+                </div>
+                <div className="space-y-4 pt-4">
+                    {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-32 w-full rounded-xl" />
+                    ))}
+                </div>
+            </div>
+        );
     }
 
     return (
         <div className="min-h-screen bg-slate-50 pb-20">
-            {/* Header Area */}
-            <div className="bg-[#1e293b] text-white pt-8 pb-12 px-6 shadow-md">
-                <div className="max-w-5xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-2">Order Recovery Center</h1>
-                    <p className="text-slate-300 mb-8 max-w-xl">
-                        Locate any order instantly to launch a recovery workflow, or manage active exceptions and fix-ups.
+            {/* Header — full-bleed at top of main, no grey strip */}
+            <div className="border-b border-slate-200 bg-white shadow-sm -mt-8 pt-8">
+                <div className="max-w-4xl mx-auto px-4 md:px-6 pb-6">
+                    <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                        <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 text-amber-600 shrink-0">
+                            <AlertTriangle className="w-5 h-5" />
+                        </span>
+                        Order Recovery Center
+                    </h1>
+                    <p className="mt-2 text-slate-500 text-sm max-w-xl">
+                        Locate any order to start a recovery workflow, or fix orders blocked by missing data.
                     </p>
 
-                    {/* Global Search */}
-                    <GlobalOrderSearch
-                        onSelectOrder={(order) => {
-                            // Open Fix-Up Wizard
-                            // alert(`Selected Order: ${order.order_number}`);
-                            setCreateFixUpOrder(order);
-                        }}
-                    />
+                    <div className="mt-5">
+                        <GlobalOrderSearch
+                            onSelectOrder={(order) => setCreateFixUpOrder(order)}
+                        />
+                    </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="max-w-5xl mx-auto -mt-6 px-6">
+            <div className="max-w-4xl mx-auto px-4 md:px-6 pt-0">
 
-                {/* Tabs */}
-                <div className="flex bg-white rounded-lg shadow-sm p-1 mb-8 inline-flex">
-                    <button
-                        onClick={() => setActiveTab('EXCEPTIONS')}
-                        className={`px-6 py-2.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'EXCEPTIONS'
-                            ? 'bg-red-50 text-red-700 shadow-sm ring-1 ring-red-100'
-                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                            }`}
-                    >
-                        <span>Data Exceptions</span>
-                        {exceptions.length > 0 && <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">{exceptions.length}</span>}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('FIX_UPS')}
-                        className={`px-6 py-2.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'FIX_UPS'
-                            ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
-                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                            }`}
-                    >
-                        <span>Active Fix-Ups</span>
-                        {fixUps.length > 0 && <span className="bg-indigo-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">{fixUps.length}</span>}
-                    </button>
+                {/* Tabs — underline style */}
+                <div className="border-b border-slate-200 overflow-x-auto hide-scrollbar pt-2">
+                    <nav className="-mb-px flex gap-8 min-w-max" aria-label="Tabs">
+                        <button
+                            onClick={() => setActiveTab('EXCEPTIONS')}
+                            className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'EXCEPTIONS'
+                                ? 'border-amber-600 text-amber-700'
+                                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                                }`}
+                        >
+                            <AlertTriangle className="w-4 h-4" />
+                            Data Exceptions
+                            {exceptions.length > 0 && (
+                                <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                                    {exceptions.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('FIX_UPS')}
+                            className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'FIX_UPS'
+                                ? 'border-emerald-600 text-emerald-700'
+                                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                                }`}
+                        >
+                            <Wrench className="w-4 h-4" />
+                            Active Fix-Ups
+                            {fixUps.length > 0 && (
+                                <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                                    {fixUps.length}
+                                </span>
+                            )}
+                        </button>
+                    </nav>
                 </div>
 
                 {/* Tab Content */}
                 {activeTab === 'EXCEPTIONS' && (
-                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        {/* Warning Banner */}
+                    <div className="py-5 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         {exceptions.length > 0 && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-start gap-3">
-                                <span className="text-xl">⚠️</span>
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                                 <div>
-                                    <p className="font-bold text-red-800">
+                                    <p className="font-semibold text-amber-900">
                                         {exceptions.length} order{exceptions.length > 1 ? 's' : ''} blocked from production
                                     </p>
-                                    <p className="text-sm text-red-700 mt-1">
-                                        Missing data prevents these from entering the embroidery queue.
+                                    <p className="text-sm text-amber-800/90 mt-0.5">
+                                        Missing data prevents these from entering the embroidery queue. Resolve below.
                                     </p>
                                 </div>
                             </div>
                         )}
 
-                        {exceptions.map((order) => (
-                            <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:border-red-300 transition-colors">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <span className="font-bold text-lg text-slate-800">{order.order_number}</span>
-                                            <ExceptionBadge type={order.exception_type} />
-                                            <AgeBadge timestamp={order.paid_at} />
-                                        </div>
-
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm mt-4">
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-400 uppercase">Parent</p>
-                                                <p className="font-medium text-slate-900">{order.parent_name}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-400 uppercase">Student</p>
-                                                <p className={`font-medium ${!order.student_name ? 'text-red-600' : 'text-slate-900'}`}>
-                                                    {order.student_name || '⚠️ Missing'}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-400 uppercase">School</p>
-                                                <p className={`font-medium ${!order.school_code ? 'text-red-600' : 'text-slate-900'}`}>
-                                                    {order.school_name || '⚠️ Missing'}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-400 uppercase">Load</p>
-                                                <p className="font-medium text-slate-700">
-                                                    {order.items.reduce((sum, i) => sum + i.quantity, 0)} items
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={() => setResolveOrder(order)}
-                                        className="btn btn-sm btn-outline border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-600 gap-2"
-                                    >
-                                        Resolve Issue
-                                    </button>
+                        {exceptions.length === 0 ? (
+                            <div className="text-center py-12 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+                                    <CheckCircle className="w-6 h-6 text-emerald-600" />
                                 </div>
+                                <h3 className="text-base font-semibold text-slate-900">No data exceptions</h3>
+                                <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto leading-relaxed">
+                                    All orders have the required student and school data. Use the search above to start a fix-up for any order.
+                                </p>
                             </div>
-                        ))}
+                        ) : (
+                            exceptions.map((order) => (
+                                <div
+                                    key={order.id}
+                                    className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:border-slate-300 hover:shadow transition-colors"
+                                >
+                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                                                <span className="font-bold text-lg text-slate-900">{order.order_number}</span>
+                                                <ExceptionBadge type={order.exception_type} />
+                                                <AgeBadge timestamp={order.paid_at} />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent</p>
+                                                    <p className="font-medium text-slate-900 mt-0.5">{order.parent_name}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Student</p>
+                                                    <p className={`font-medium mt-0.5 ${!order.student_name ? 'text-amber-600' : 'text-slate-900'}`}>
+                                                        {order.student_name || 'Missing'}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">School</p>
+                                                    <p className={`font-medium mt-0.5 ${!order.school_code ? 'text-amber-600' : 'text-slate-900'}`}>
+                                                        {order.school_name || 'Missing'}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Items</p>
+                                                    <p className="font-medium text-slate-700 mt-0.5">
+                                                        {order.items.reduce((sum, i) => sum + i.quantity, 0)} units
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => setResolveOrder(order)}
+                                            className="btn btn-sm bg-[#19966D] hover:bg-[#15805C] text-white border-0 shadow-sm self-start shrink-0"
+                                        >
+                                            Resolve issue
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 )}
 
                 {activeTab === 'FIX_UPS' && (
-                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="py-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         <FixUpList
                             fixUps={fixUps}
-                            onSelect={(fix) => {
-                                // View details - for now just alert or log
-                                console.log("Selected fix up", fix);
-                            }}
+                            onSelect={setSelectedFixUp}
                             onUpdateStatus={async (id, status) => {
                                 await adapter.updateFixUpStatus(id, status);
                                 loadData();
@@ -178,7 +224,6 @@ export default function ExceptionsPage() {
                 )}
             </div>
 
-            {/* Resolve Modal */}
             {resolveOrder && (
                 <ResolveExceptionModal
                     order={resolveOrder}
@@ -187,7 +232,6 @@ export default function ExceptionsPage() {
                 />
             )}
 
-            {/* Fix Up Creation Modal */}
             {createFixUpOrder && (
                 <FixUpCreationModal
                     order={createFixUpOrder}
@@ -196,6 +240,14 @@ export default function ExceptionsPage() {
                         setActiveTab('FIX_UPS');
                         loadData();
                     }}
+                />
+            )}
+
+            {selectedFixUp && (
+                <FixUpDetailModal
+                    fixUp={selectedFixUp}
+                    onClose={() => setSelectedFixUp(null)}
+                    onSave={loadData}
                 />
             )}
         </div>

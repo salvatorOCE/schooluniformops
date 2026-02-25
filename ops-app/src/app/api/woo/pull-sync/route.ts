@@ -135,19 +135,25 @@ export async function POST(req: NextRequest) {
             const isNew = !existingOrder;
             const statusChanged = existingOrder && existingOrder.status !== status;
 
-            // Detect senior orders and tag the order number
+            // Detect senior orders and tag the order number + set is_senior_order for distribution
             let orderNumber = String(order.number);
             const seniorKeywords = ['senior', 'year 6', 'yr 6'];
-            if (!orderNumber.includes('(SEN)') && order.line_items && order.line_items.length > 0) {
-                const allSenior = order.line_items.every((item: any) => {
+            let isSeniorOrder = false;
+            if (orderNumber.includes('(SEN)') || (order.line_items && order.line_items.length > 0)) {
+                const allSenior = order.line_items && order.line_items.length > 0 && order.line_items.every((item: any) => {
                     const name = item.name.toLowerCase();
                     return seniorKeywords.some(kw => name.includes(kw));
                 });
                 if (allSenior) {
-                    orderNumber = `${orderNumber} (SEN)`;
+                    if (!orderNumber.includes('(SEN)')) orderNumber = `${orderNumber} (SEN)`;
+                    isSeniorOrder = true;
                 }
             }
             console.log(`[Sync] Order #${orderNumber} (woo_id: ${order.id}) status: ${status}, items: ${order.line_items?.length || 0}`);
+
+            // Use WooCommerce order date placed (not sync time)
+            const orderDateCreated = order.date_created_gmt || order.date_created;
+            const orderDatePaid = order.date_paid_gmt || order.date_paid || null;
 
             // Upsert Order
             const { data: upsertedOrder, error: orderError } = await supabaseAdmin
@@ -160,6 +166,9 @@ export async function POST(req: NextRequest) {
                     delivery_method: deliveryType,
                     student_name: studentName,
                     customer_name: parentName,
+                    is_senior_order: isSeniorOrder,
+                    created_at: orderDateCreated || undefined,
+                    paid_at: orderDatePaid || undefined,
                 }, { onConflict: 'woo_order_id' })
                 .select()
                 .single();

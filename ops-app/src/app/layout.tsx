@@ -19,6 +19,9 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "School Uniform Solutions - Operations",
   description: "Operations management system for School Uniform Solutions",
+  icons: {
+    icon: "/logo.png"
+  }
 };
 
 export default function RootLayout({

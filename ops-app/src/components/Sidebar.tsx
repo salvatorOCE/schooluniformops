@@ -19,7 +19,8 @@ import {
     Calendar,
     School,
     Search,
-    LogOut
+    LogOut,
+    StickyNote
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
@@ -31,7 +32,15 @@ export interface NavItem {
     badge?: number;
 }
 
+/** Important Notes — pinned at top for all modules */
+export const importantNotesNavItem: NavItem = {
+    href: '/important-notes',
+    label: 'Important Notes',
+    icon: StickyNote,
+};
+
 export const navItems: NavItem[] = [
+    importantNotesNavItem,
     { href: '/', label: 'Overview', icon: LayoutDashboard },
     { href: '/schedule', label: 'Production Schedule', icon: Calendar },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -43,6 +52,27 @@ export const navItems: NavItem[] = [
     { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
     { href: '/school-portal', label: 'School Portal', icon: School },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
+    { href: '/tracking', label: 'Order Tracking', icon: Search },
+];
+
+/** Main production-ready modules (top of nav); Important Notes is first */
+export const mainNavItems: NavItem[] = [
+    importantNotesNavItem,
+    { href: '/schedule', label: 'Production Schedule', icon: Calendar },
+    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/orders', label: 'Orders', icon: Clock },
+    { href: '/distribution', label: 'Distribution', icon: Package },
+    { href: '/school-runs', label: 'School Bulk', icon: Bus },
+    { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
+    { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
+];
+
+/** Work in progress (bottom section) */
+export const workInProgressNavItems: NavItem[] = [
+    { href: '/', label: 'Overview', icon: LayoutDashboard },
+    { href: '/embroidery', label: 'Embroidery', icon: Scissors },
+    { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
+    { href: '/school-portal', label: 'School Portal', icon: School },
     { href: '/tracking', label: 'Order Tracking', icon: Search },
 ];
 
@@ -97,54 +127,80 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
 
     return (
         <aside className="w-64 min-h-screen flex flex-col z-20 bg-[#002D2B] text-white border-r border-[#004440] shadow-xl">
-            {/* Brand Header */}
-            <div className="h-20 px-6 flex items-center border-b border-[#004440] bg-[#002523]">
-                <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-[#19966D] rounded-md flex items-center justify-center shadow-lg shadow-emerald-900/50">
-                            <span className="font-bold text-white text-lg">S</span>
-                        </div>
-                        <span className="font-bold text-lg tracking-tight text-white">OPS MANAGER</span>
-                    </div>
-                    <span className="text-[10px] text-emerald-400/80 font-medium pl-10 -mt-1 tracking-wider uppercase">School Uniform Solutions</span>
-                </div>
+            {/* Brand Header — light green banner, logo fills height */}
+            <div className="px-3 py-0 flex items-stretch border-b border-emerald-200 bg-emerald-100 h-[125px] min-h-[125px]">
+                <Link href="/" className="flex items-stretch w-full">
+                    <img src="/logo.png" alt="School Uniform Solutions" className="h-full w-auto max-w-full object-contain object-left" />
+                </Link>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+            <nav className="flex-1 px-3 py-6 flex flex-col overflow-y-auto">
                 <div className="px-3 mb-2 text-[10px] font-bold text-emerald-500/80 uppercase tracking-widest">Modules</div>
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
-                    const isRecovery = item.href === '/exceptions';
-                    const showBadge = isRecovery && exceptionCount > 0;
+                <div className="space-y-1">
+                    {mainNavItems.map((item) => {
+                        const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
+                        const isRecovery = item.href === '/exceptions';
+                        const showBadge = isRecovery && exceptionCount > 0;
 
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
-                                isActive
-                                    ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium'
-                                    : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
-                            )}
-                        >
-                            <item.icon className={cn(
-                                "w-4 h-4 transition-colors",
-                                isActive ? "text-white" : "text-emerald-400/70 group-hover:text-emerald-300"
-                            )} />
-                            <span className="flex-1 text-sm tracking-wide">{item.label}</span>
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={cn(
+                                    'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
+                                    isActive
+                                        ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium'
+                                        : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
+                                )}
+                            >
+                                <item.icon className={cn(
+                                    "w-4 h-4 transition-colors",
+                                    isActive ? "text-white" : "text-emerald-400/70 group-hover:text-emerald-300"
+                                )} />
+                                <span className="flex-1 text-sm tracking-wide">{item.label}</span>
 
-                            {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
+                                {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
 
-                            {showBadge && (
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                                    {exceptionCount}
-                                </span>
-                            )}
-                        </Link>
-                    );
-                })}
+                                {showBadge && (
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                                        {exceptionCount}
+                                    </span>
+                                )}
+                            </Link>
+                        );
+                    })}
+                </div>
+
+                {/* Work in progress — bottom section */}
+                <div className="mt-auto pt-6 pb-2">
+                    <div className="px-3 mb-2 text-[10px] font-bold text-amber-500/70 uppercase tracking-widest">Work in progress</div>
+                    <div className="space-y-1">
+                        {workInProgressNavItems.map((item) => {
+                            const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
+
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
+                                        isActive
+                                            ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium'
+                                            : 'text-emerald-100/50 hover:bg-[#003836] hover:text-emerald-100/80'
+                                    )}
+                                >
+                                    <item.icon className={cn(
+                                        "w-4 h-4 transition-colors",
+                                        isActive ? "text-white" : "text-emerald-500/50 group-hover:text-emerald-400/70"
+                                    )} />
+                                    <span className="flex-1 text-sm tracking-wide">{item.label}</span>
+                                    {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
             </nav>
 
             {/* User Profile / Context */}

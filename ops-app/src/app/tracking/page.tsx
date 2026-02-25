@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useData } from '@/lib/data-provider';
-import { Order, OrderStatus } from '@/lib/types';
+import { Order, PackOutManifest } from '@/lib/types';
 import { getStatusLabel, getStatusColor as getBaseStatusColor } from '@/lib/utils';
-import { Search, Package, Scissors, Truck, CheckCircle, Clock, CreditCard, ChevronRight, X } from 'lucide-react';
+import { downloadPackOutManifestPdf } from '@/lib/generate-pack-out-manifest-pdf';
+import { Search, Package, Scissors, Truck, CheckCircle, CreditCard, ChevronRight, X, FileText, ClipboardList } from 'lucide-react';
 
 interface TimelineStage {
     label: string;
@@ -143,13 +144,37 @@ function formatDuration(start: Date, end: Date): string {
     return `${days}d ${hours % 24}h`;
 }
 
+type TrackingTab = 'SEARCH' | 'MANIFESTS' | 'DELIVERED';
+
 export default function TrackingPage() {
     const adapter = useData();
+    const [activeTab, setActiveTab] = useState<TrackingTab>('SEARCH');
+
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<Order[]>([]);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     const [searching, setSearching] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+
+    const [manifests, setManifests] = useState<PackOutManifest[]>([]);
+    const [deliveredOrders, setDeliveredOrders] = useState<Order[]>([]);
+    const [manifestsLoading, setManifestsLoading] = useState(false);
+    const [deliveredLoading, setDeliveredLoading] = useState(false);
+    const [expandedManifestId, setExpandedManifestId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (activeTab === 'MANIFESTS') {
+            setManifestsLoading(true);
+            adapter.getPackOutManifests().then(m => { setManifests(m); setManifestsLoading(false); });
+        }
+    }, [activeTab, adapter]);
+
+    useEffect(() => {
+        if (activeTab === 'DELIVERED') {
+            setDeliveredLoading(true);
+            adapter.getDeliveredOrders().then(o => { setDeliveredOrders(o); setDeliveredLoading(false); });
+        }
+    }, [activeTab, adapter]);
 
     const handleSearch = useCallback(async () => {
         if (!query.trim()) return;
@@ -161,9 +186,7 @@ export default function TrackingPage() {
         setSearching(false);
     }, [query, adapter]);
 
-    const statusColor = (status: string) => {
-        return getBaseStatusColor(status);
-    };
+    const statusColor = (status: string) => getBaseStatusColor(status);
 
     const deliveryLabel = (type: string) => {
         switch (type) {
@@ -176,13 +199,36 @@ export default function TrackingPage() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
-            {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Order Tracking</h1>
-                <p className="text-sm text-slate-500 mt-1">Look up any order by number, parent name, or student name</p>
+                <p className="text-sm text-slate-500 mt-1">Search orders, view pack-out manifests, and delivered orders</p>
             </div>
 
-            {/* Search Bar */}
+            {/* Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 w-fit">
+                <button
+                    onClick={() => setActiveTab('SEARCH')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-all ${activeTab === 'SEARCH' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                >
+                    <Search className="w-4 h-4" /> Search
+                </button>
+                <button
+                    onClick={() => setActiveTab('MANIFESTS')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-all ${activeTab === 'MANIFESTS' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                >
+                    <FileText className="w-4 h-4" /> Pack-out manifests
+                </button>
+                <button
+                    onClick={() => setActiveTab('DELIVERED')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-all ${activeTab === 'DELIVERED' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                >
+                    <ClipboardList className="w-4 h-4" /> Delivered
+                </button>
+            </div>
+
+            {/* Search tab */}
+            {activeTab === 'SEARCH' && (
+                <>
             <div className="flex gap-3">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -328,6 +374,125 @@ export default function TrackingPage() {
                     </div>
                 )}
             </div>
+                </>
+            )}
+
+            {/* Pack-out manifests tab */}
+            {activeTab === 'MANIFESTS' && (
+                <div className="space-y-4">
+                    {manifestsLoading ? (
+                        <div className="text-center py-12 text-slate-500">Loading manifests…</div>
+                    ) : manifests.length === 0 ? (
+                        <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                            <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                            <p className="font-medium">No pack-out manifests yet</p>
+                            <p className="text-xs mt-1">Finish a pack-out in Distribution to create a manifest</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {manifests.map((m) => (
+                                <div key={m.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                                    <button
+                                        type="button"
+                                        onClick={() => setExpandedManifestId(expandedManifestId === m.id ? null : m.id)}
+                                        className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                                                {m.school_name.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-slate-900">{m.school_name}</div>
+                                                <div className="text-xs text-slate-500">
+                                                    {new Date(m.packed_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })} · {m.orders.length} order{m.orders.length !== 1 ? 's' : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                                                onClick={(e) => { e.stopPropagation(); downloadPackOutManifestPdf(m); }}
+                                            >
+                                                Download PDF
+                                            </span>
+                                            <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${expandedManifestId === m.id ? 'rotate-90' : ''}`} />
+                                        </div>
+                                    </button>
+                                    {expandedManifestId === m.id && (
+                                        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+                                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Orders on this manifest</div>
+                                            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                                                {m.orders.map((o) => (
+                                                    <div key={o.order_id} className="flex items-center justify-between text-sm py-2 px-3 bg-white rounded border border-slate-100">
+                                                        <span className="font-mono font-medium text-slate-800">{o.order_number}</span>
+                                                        <span className="text-slate-600">{o.student_name || '—'}</span>
+                                                        <span className="text-slate-500 text-xs">{o.item_count} items</span>
+                                                        <span className="text-slate-400 text-xs truncate max-w-[180px]">{o.items_summary}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Delivered orders tab */}
+            {activeTab === 'DELIVERED' && (
+                <div className="space-y-4">
+                    {deliveredLoading ? (
+                        <div className="text-center py-12 text-slate-500">Loading delivered orders…</div>
+                    ) : deliveredOrders.length === 0 ? (
+                        <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                            <Truck className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                            <p className="font-medium">No delivered orders yet</p>
+                            <p className="text-xs mt-1">Dispatched and collected orders appear here</p>
+                        </div>
+                    ) : (
+                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+                                <h2 className="font-bold text-slate-900">Delivered orders</h2>
+                                <p className="text-xs text-slate-500 mt-0.5">Orders completed and sent to school or collected</p>
+                            </div>
+                            <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                                {deliveredOrders.map((order) => (
+                                    <div key={order.id} className="p-4 hover:bg-slate-50/50">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <div className="font-mono font-bold text-slate-900">{order.order_number}</div>
+                                                <div className="text-sm text-slate-600 mt-0.5">
+                                                    {order.student_name || order.parent_name} · {order.school_name}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 mt-2">
+                                                    {order.items.map((i) => (
+                                                        <span key={i.id} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                                                            {i.quantity}× {i.product_name}{i.size ? ` (${i.size})` : ''}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusColor(order.order_status)}`}>
+                                                    {getStatusLabel(order.order_status)}
+                                                </span>
+                                                <div className="text-xs text-slate-500 mt-1">
+                                                    {order.dispatched_at
+                                                        ? new Date(order.dispatched_at).toLocaleDateString('en-AU', { dateStyle: 'medium' })
+                                                        : '—'}
+                                                </div>
+                                                <span className="text-xs text-slate-400">{deliveryLabel(order.delivery_type)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

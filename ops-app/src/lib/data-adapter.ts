@@ -52,6 +52,7 @@ export interface DataAdapter {
     getFixUps(): Promise<import('./types').FixUpRequest[]>;
     createFixUp(request: Partial<import('./types').FixUpRequest>): Promise<void>;
     updateFixUpStatus(id: string, status: import('./types').FixUpStatus): Promise<void>;
+    updateFixUp(id: string, updates: { notes?: string; status?: import('./types').FixUpStatus }): Promise<void>;
 
     // Schedule / Calendar
     getScheduleEvents(start: Date, end: Date): Promise<import('./types').ScheduleEvent[]>;
@@ -62,8 +63,12 @@ export interface DataAdapter {
     syncStatusToWoo(orderId: string, status: string, note?: string): Promise<{ success: boolean }>;
 
     // Order Search (for tracking)
-    // Order Search (for tracking)
     searchOrders(query: string): Promise<import('./types').Order[]>;
+
+    // Pack-out manifests & delivered orders (Order Tracking module)
+    savePackOutManifest(manifest: import('./types').PackOutManifest): Promise<void>;
+    getPackOutManifests(): Promise<import('./types').PackOutManifest[]>;
+    getDeliveredOrders(): Promise<Order[]>;
 
     // History & Audit
     getHistoryOrders(): Promise<import('./types').OrderHistoryRecord[]>;

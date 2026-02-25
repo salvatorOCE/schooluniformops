@@ -26,11 +26,11 @@ export function isValidDigitalStockSize(size: string): boolean {
 export class SupabaseAdapter implements DataAdapter {
     async getPackingSessions(): Promise<SchoolRunGroup[]> {
         if (!supabase) return [];
-        // Fetch all orders ready to pack
+        // Fetch all orders in Processing (need to be packed out)
         const { data: orders } = await supabase
             .from('orders')
             .select(`*, schools (code, name), order_items (*)`)
-            .eq('status', 'Distribution');
+            .eq('status', 'Processing');
 
         // Group by school
         const grouped: Record<string, SchoolRunGroup> = {};
@@ -576,7 +576,9 @@ export class SupabaseAdapter implements DataAdapter {
         if (statuses && statuses.length > 0) {
             query = query.in('status', statuses);
         } else {
-            query = query.in('status', ['Distribution', 'Packed']);
+            // Default queue for Distribution/Dispatch: show orders that have left packing
+            // and are awaiting final delivery confirmation.
+            query = query.in('status', ['Shipped']);
         }
 
         if (deliveryType) {
@@ -716,24 +718,24 @@ export class SupabaseAdapter implements DataAdapter {
         await this.packOrder(orderId);
     }
 
-    // Dispatch School Run
+    // Dispatch School Run: when school confirms delivery, mark shipped orders as Completed
     async dispatchSchoolRun(schoolCode: string): Promise<void> {
         if (!supabase) return;
         const { data } = await supabase
             .from('orders')
             .select('id, schools!inner(code)')
             .eq('schools.code', schoolCode)
-            .eq('status', 'PACKED');
+            .eq('status', 'Shipped');
 
         const ids = (data || []).map(d => d.id);
         if (ids.length > 0) {
             await supabase.from('orders')
-                .update({ status: 'DISPATCHED', dispatched_at: new Date().toISOString() })
+                .update({ status: 'Completed' })
                 .in('id', ids);
 
-            // Sync all to WooCommerce
+            // Sync all to WooCommerce as Completed
             for (const id of ids) {
-                await this.syncStatusToWoo(id, 'DISPATCHED');
+                await this.syncStatusToWoo(id, 'Completed');
             }
         }
     }
@@ -1190,6 +1192,16 @@ export class SupabaseAdapter implements DataAdapter {
         await supabase.from('fix_ups').update({ status }).eq('id', id);
     }
 
+    async updateFixUp(id: string, updates: { notes?: string; status?: FixUpRequest['status'] }): Promise<void> {
+        if (!supabase) return;
+        const payload: Record<string, unknown> = {};
+        if (updates.notes !== undefined) payload.notes = updates.notes;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (Object.keys(payload).length === 0) return;
+        const { error } = await supabase.from('fix_ups').update(payload).eq('id', id);
+        if (error) throw new Error(error.message || 'Failed to update fix-up');
+    }
+
     // --- SCHEDULE ---
     async getScheduleEvents(start: Date, end: Date): Promise<import('./types').ScheduleEvent[]> {
         if (!supabase) return [];
@@ -1247,7 +1259,7 @@ export class SupabaseAdapter implements DataAdapter {
             return { success: true };
         }
 
-        // 2. Call Proxy API
+        // 2. Call Proxy API (non-blocking: pack/ship in Ops always succeeds; Woo sync is best-effort)
         try {
             const res = await fetch('/api/woo/sync', {
                 method: 'POST',
@@ -1259,11 +1271,14 @@ export class SupabaseAdapter implements DataAdapter {
                 })
             });
 
-            if (!res.ok) throw new Error(await res.text());
-            return { success: true };
+            const json = await res.json().catch(() => ({}));
+            const success = res.ok && json.success !== false;
+            if (!success && (json.error || json.details)) {
+                console.warn('WooCommerce sync skipped or failed:', json.error || json.details);
+            }
+            return { success };
         } catch (error) {
-            console.error('Failed to sync to Woo:', error);
-            // Don't block UI flow? Or return false?
+            console.warn('WooCommerce sync request failed (order updated in Ops):', error);
             return { success: false };
         }
     }
@@ -1277,6 +1292,46 @@ export class SupabaseAdapter implements DataAdapter {
             .or(`order_number.ilike.%${query}%,customer_name.ilike.%${query}%,student_name.ilike.%${query}%`)
             .limit(20);
 
+        return (data || []).map(d => this.mapOrder(d as any));
+    }
+
+    async savePackOutManifest(manifest: import('./types').PackOutManifest): Promise<void> {
+        if (!supabase) return;
+        // Table: pack_out_manifests (id uuid PK, school_code text, school_name text, packed_at timestamptz, orders jsonb)
+        const { error } = await supabase.from('pack_out_manifests').insert({
+            id: manifest.id,
+            school_code: manifest.school_code,
+            school_name: manifest.school_name,
+            packed_at: manifest.packed_at,
+            orders: manifest.orders as any,
+        });
+        if (error) console.warn('savePackOutManifest failed (table may not exist):', error.message);
+    }
+
+    async getPackOutManifests(): Promise<import('./types').PackOutManifest[]> {
+        if (!supabase) return [];
+        const { data } = await supabase
+            .from('pack_out_manifests')
+            .select('*')
+            .order('packed_at', { ascending: false });
+        if (!data) return [];
+        return data.map((row: any) => ({
+            id: row.id,
+            school_code: row.school_code,
+            school_name: row.school_name,
+            packed_at: row.packed_at,
+            orders: row.orders || [],
+        }));
+    }
+
+    async getDeliveredOrders(): Promise<Order[]> {
+        if (!supabase) return [];
+        const { data } = await supabase
+            .from('orders')
+            .select(`*, schools (code, name), order_items (*)`)
+            .in('status', ['Shipped', 'DISPATCHED', 'COLLECTED'])
+            .not('dispatched_at', 'is', null)
+            .order('dispatched_at', { ascending: false });
         return (data || []).map(d => this.mapOrder(d as any));
     }
 
@@ -1302,6 +1357,7 @@ export class SupabaseAdapter implements DataAdapter {
         return (data || []).map(o => {
             // Map items
             const items = (o.order_items as any[]).map(i => ({
+                itemId: i.id,
                 sku: i.sku,
                 productName: i.name,
                 size: i.size || 'N/A',
@@ -1351,6 +1407,7 @@ export class SupabaseAdapter implements DataAdapter {
             const status = o.status || 'Processing';
 
             return {
+                id: o.id,
                 orderId: o.order_number,
                 studentName: o.student_name || 'N/A',
                 parentName: o.customer_name,
@@ -1361,6 +1418,7 @@ export class SupabaseAdapter implements DataAdapter {
                 items: items,
                 createdAt: new Date(o.created_at),
                 updatedAt: new Date(o.paid_at || o.created_at),
+                paidAt: o.paid_at ? new Date(o.paid_at) : undefined,
                 hasIssues: o.status === 'EXCEPTION',
                 hasPartialEmbroidery: false, // TODO
                 events: events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())

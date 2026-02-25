@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useData } from '@/lib/data-provider';
-import { Order, SchoolRunGroup, OrderStatus } from '@/lib/types';
+import { Order, SchoolRunGroup, OrderStatus, PackOutManifest } from '@/lib/types';
 import { PrintLabelModal } from '@/components/PrintLabelModal';
 import { ExceptionModal } from '@/components/distribution/ExceptionModal';
 import { PackingListView } from '@/components/distribution/PackingListView';
@@ -12,7 +13,8 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { WooSyncBadge } from '@/components/ui/WooSyncBadge';
 
 import { useToast } from '@/lib/toast-context';
-import { Search, X } from 'lucide-react';
+import { buildManifestFromOrders, downloadPackOutManifestPdf } from '@/lib/generate-pack-out-manifest-pdf';
+import { Search, X, Package, Truck } from 'lucide-react';
 
 type MainTab = 'PACKING' | 'DISPATCH';
 
@@ -22,7 +24,6 @@ export default function DistributionPage() {
     // View State
 
     const [activeTab, setActiveTab] = useState<MainTab>('PACKING');
-    const [packViewMode, setPackViewMode] = useState<'STANDARD' | 'SENIOR'>('STANDARD');
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
 
@@ -38,42 +39,49 @@ export default function DistributionPage() {
     // Toast
     const { toast } = useToast();
 
-    // Modals
+    // Modals & one-off states
     const [printOrder, setPrintOrder] = useState<Order | null>(null);
     const [packOrder, setPackOrder] = useState<Order | null>(null);
     const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; action: () => void } | null>(null);
     const [exceptionOrder, setExceptionOrder] = useState<Order | null>(null);
     const [syncedOrderIds, setSyncedOrderIds] = useState<Set<string>>(new Set());
+    const [lastManifest, setLastManifest] = useState<PackOutManifest | null>(null);
 
-    // Derived Sessions based on View Mode
-    const displayedSessions = packingSessions.map(session => {
-        // Filter orders based on mode
-        const filteredOrders = session.orders.filter(o =>
-            packViewMode === 'SENIOR' ? o.is_senior_order : !o.is_senior_order
-        );
+    const matchesSearch = (session: SchoolRunGroup) => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return session.school_name.toLowerCase().includes(q) || session.school_code.toLowerCase().includes(q);
+    };
 
+    // Orders with (SEN) in order_number are Senior; distribution uses this so (SEN) never appears in non-Senior
+    const isOrderSenior = (o: Order) => !!o.is_senior_order || (typeof o.order_number === 'string' && o.order_number.includes('(SEN)'));
 
+    // Split Processing orders into NON-SENIOR and SENIOR sections (schools that need to be packed out)
+    const nonSeniorSessions: SchoolRunGroup[] = packingSessions
+        .map(session => {
+            const filtered = session.orders.filter(o => !isOrderSenior(o));
+            if (filtered.length === 0 || !matchesSearch(session)) return null;
+            return {
+                ...session,
+                orders: filtered,
+                order_count: filtered.length,
+                item_count: filtered.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
+            };
+        })
+        .filter(Boolean) as SchoolRunGroup[];
 
-        // Filter by Search Query
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            const matchesSchool = session.school_name.toLowerCase().includes(query) ||
-                session.school_code.toLowerCase().includes(query);
-
-            if (!matchesSchool) return null;
-        }
-
-        if (filteredOrders.length === 0) return null;
-
-        return {
-            ...session,
-            orders: filteredOrders,
-            order_count: filteredOrders.length,
-            // Recalculate item count implies mapping items, but let's just use order length for list view for now to save perf
-            // or we can sum it up if needed for the badge
-            item_count: filteredOrders.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
-        };
-    }).filter(Boolean) as SchoolRunGroup[];
+    const seniorSessions: SchoolRunGroup[] = packingSessions
+        .map(session => {
+            const filtered = session.orders.filter(o => isOrderSenior(o));
+            if (filtered.length === 0 || !matchesSearch(session)) return null;
+            return {
+                ...session,
+                orders: filtered,
+                order_count: filtered.length,
+                item_count: filtered.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
+            };
+        })
+        .filter(Boolean) as SchoolRunGroup[];
 
     const loadData = async () => {
         setLoading(true);
@@ -81,15 +89,12 @@ export default function DistributionPage() {
             const sessions = await adapter.getPackingSessions();
             setPackingSessions(sessions);
 
-            // Refresh active session if open
+            // Refresh active session if open (re-apply same senior/non-senior filter)
             if (activeSession) {
-                // We need to re-find the session AND re-filter it based on current mode
                 const rawSession = sessions.find(s => s.school_code === activeSession.school_code);
                 if (rawSession) {
-                    const filteredOrders = rawSession.orders.filter(o =>
-                        packViewMode === 'SENIOR' ? o.is_senior_order : !o.is_senior_order
-                    );
-
+                    const isSenior = activeSession.orders.some(o => isOrderSenior(o));
+                    const filteredOrders = rawSession.orders.filter(o => isSenior ? isOrderSenior(o) : !isOrderSenior(o));
                     if (filteredOrders.length > 0) {
                         setActiveSession({
                             ...rawSession,
@@ -98,7 +103,7 @@ export default function DistributionPage() {
                             item_count: filteredOrders.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
                         });
                     } else {
-                        setActiveSession(null); // Closed if no orders left in this view
+                        setActiveSession(null);
                     }
                 } else {
                     setActiveSession(null);
@@ -106,8 +111,8 @@ export default function DistributionPage() {
             }
         } else {
             // Load Dispatch Data
-            const schoolData = await adapter.getSchoolRuns(); // Includes PACKED
-            setDispatchSchoolRuns(schoolData.filter(g => g.orders.some(o => o.order_status === 'PACKED')));
+            const schoolData = await adapter.getSchoolRuns(); // Shipped (awaiting confirmation) school runs
+            setDispatchSchoolRuns(schoolData.filter(g => g.orders.some(o => o.order_status === 'Shipped')));
 
             const homeData = await adapter.getDistributionQueue('HOME', ['PACKED']);
             setDispatchHomeOrders(homeData);
@@ -120,18 +125,15 @@ export default function DistributionPage() {
 
     useEffect(() => {
         loadData();
-    }, [activeTab, packViewMode]); // Reload/Re-filter when mode changes
+    }, [activeTab]);
 
-    // Handlers
-    const handleOpenSession = (schoolCode: string) => {
-        const session = displayedSessions.find(s => s.school_code === schoolCode);
-        if (session) setActiveSession(session);
+    const handleOpenSession = (session: SchoolRunGroup) => {
+        setActiveSession(session);
     };
 
     const handleBackToPackingList = async () => {
         setActiveSession(null);
         setLoading(true);
-        // Manually fetch to avoid closure issue with loadData() capturing activeSession
         const sessions = await adapter.getPackingSessions();
         setPackingSessions(sessions);
         setLoading(false);
@@ -139,8 +141,29 @@ export default function DistributionPage() {
 
     const handleDirectPack = async (orderId: string) => {
         await adapter.packOrder(orderId);
-        // No need to setPackOrder(null) as we aren't using the modal
         loadData();
+    };
+
+    const handleFinishPackOut = async (packedOrders: Order[], schoolCode: string, schoolName: string) => {
+        if (packedOrders.length === 0) return;
+
+        // Build manifest for the completed orders
+        const manifest = buildManifestFromOrders(schoolCode, schoolName, packedOrders);
+
+        // Save manifest for Order Tracking
+        await adapter.savePackOutManifest(manifest);
+
+        // Mark all packed orders as Shipped / dispatched
+        for (const order of packedOrders) {
+            await adapter.dispatchOrder(order.id);
+        }
+
+        // Store manifest so user can choose to download now or later
+        setLastManifest(manifest);
+
+        // Clear session back to packing list and show confirmation
+        toast.success('Completed orders have been changed to shipped.');
+        handleBackToPackingList();
     };
 
     const handleUpdateOrder = async (orderId: string, items: any[]) => {
@@ -151,19 +174,11 @@ export default function DistributionPage() {
     // Dispatch Handlers
     const handleDispatchRun = (schoolCode: string) => {
         setConfirmAction({
-            title: 'Dispatch School Run',
-            message: 'Dispatch all packed orders in this school run?',
+            title: 'Order Delivered and complete',
+            message: 'Mark all shipped orders in this school run as Completed?',
             action: async () => {
                 await adapter.dispatchSchoolRun(schoolCode);
-                // Sync each order to WooCommerce
-                const run = dispatchSchoolRuns.find(r => r.school_code === schoolCode);
-                if (run) {
-                    for (const order of run.orders) {
-                        await adapter.syncStatusToWoo(order.id, 'completed', 'Dispatched via school run');
-                        setSyncedOrderIds(prev => new Set(prev).add(order.id));
-                    }
-                }
-                toast.success('School run dispatched & synced to WooCommerce!');
+                toast.success('School run marked as Completed.');
                 loadData();
             }
         });
@@ -221,69 +236,85 @@ export default function DistributionPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 pb-20">
-            {/* Header */}
-            <div className="bg-[#1e293b] text-white px-8 py-4 shadow-md sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
+            {/* Header — matches Orders / Digital Stock / app style */}
+            <header className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                <div className="max-w-7xl mx-auto px-6 lg:px-8 py-5 flex items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-xl font-bold tracking-tight text-white/90">Distribution Workspace</h1>
-                        <div className="text-xs text-blue-200 mt-0.5 font-medium uppercase tracking-wider">High Volume Mode</div>
+                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                            <Package className="w-6 h-6 text-slate-500" />
+                            Distribution
+                        </h1>
+                        <p className="text-slate-500 font-medium mt-0.5 text-sm">Pack orders and dispatch school runs</p>
                     </div>
 
-                    <div className="flex bg-slate-800/50 p-1 rounded-lg">
-                        <button
-                            onClick={() => { setActiveTab('PACKING'); setActiveSession(null); }}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'PACKING'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                                }`}
-                        >
-                            📦 Packing
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('DISPATCH')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'DISPATCH'
-                                ? 'bg-green-600 text-white shadow-sm'
-                                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                                }`}
-                        >
-                            🚀 Dispatch
-                        </button>
+                    <div className="flex items-center gap-2">
+                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                            <button
+                                onClick={() => { setActiveTab('PACKING'); setActiveSession(null); }}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-semibold transition-all ${activeTab === 'PACKING'
+                                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                            >
+                                <Package className="w-4 h-4" />
+                                Packing
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('DISPATCH')}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-semibold transition-all ${activeTab === 'DISPATCH'
+                                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                            >
+                                <Truck className="w-4 h-4" />
+                                Dispatch
+                            </button>
+                        </div>
+                        {activeTab === 'DISPATCH' && (
+                            <WooSyncBadge synced={syncedOrderIds.size > 0} />
+                        )}
                     </div>
-                    {activeTab === 'DISPATCH' && (
-                        <WooSyncBadge synced={syncedOrderIds.size > 0} className="ml-3" />
-                    )}
                 </div>
-            </div>
+            </header>
 
             <div className="max-w-7xl mx-auto px-6 py-8">
+                {lastManifest && (
+                    <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <div className="text-sm font-semibold text-emerald-800">
+                                Completed orders have been changed to shipped.
+                            </div>
+                            <div className="text-xs text-emerald-700 mt-1">
+                                You can download this pack-out manifest now or later from Order Tracking.
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => downloadPackOutManifestPdf(lastManifest)}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                            >
+                                Download manifest
+                            </button>
+                            <Link
+                                href="/tracking?tab=MANIFESTS"
+                                className="text-xs font-semibold px-3 py-1.5 rounded-md border border-emerald-400 text-emerald-800 hover:bg-emerald-100"
+                            >
+                                Go to Order Tracking
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={() => setLastManifest(null)}
+                                className="text-xs text-emerald-700 hover:text-emerald-900"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {activeTab === 'PACKING' && (
                     <>
-                        <div className="mb-6 flex items-center justify-between">
-                            <div className="flex bg-slate-200 p-1 rounded-lg">
-                                <button
-                                    onClick={() => setPackViewMode('STANDARD')}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${packViewMode === 'STANDARD' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                        }`}
-                                >
-                                    Standard Pack-Out
-                                </button>
-                                <button
-                                    onClick={() => setPackViewMode('SENIOR')}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${packViewMode === 'SENIOR' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-purple-700'
-                                        }`}
-                                >
-                                    Senior Pack-Out
-                                </button>
-                            </div>
-
-                            {packViewMode === 'SENIOR' && (
-                                <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-3 py-1 rounded-full animate-pulse">
-                                    MASTER SENIOR BATCH MODE
-                                </span>
-                            )}
-                        </div>
-
-                        {/* Search Bar */}
+                        {/* Search */}
                         <div className="mb-6 relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input
@@ -291,7 +322,7 @@ export default function DistributionPage() {
                                 placeholder="Search schools..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                             />
                             {searchQuery && (
                                 <button
@@ -304,18 +335,38 @@ export default function DistributionPage() {
                         </div>
 
                         {!activeSession ? (
-                            <PackingListView
-                                sessions={displayedSessions}
-                                onOpenSession={handleOpenSession}
-                            />
+                            <div className="space-y-10">
+                                {/* NON-SENIOR section */}
+                                <section>
+                                    <h2 className="text-lg font-bold text-slate-800 mb-4 uppercase tracking-wide border-b border-slate-200 pb-2">
+                                        Non-Senior
+                                    </h2>
+                                    <PackingListView
+                                        sessions={nonSeniorSessions}
+                                        onOpenSession={handleOpenSession}
+                                    />
+                                </section>
+                                {/* SENIOR section */}
+                                <section>
+                                    <h2 className="text-lg font-bold text-slate-800 mb-4 uppercase tracking-wide border-b border-slate-200 pb-2">
+                                        Senior
+                                    </h2>
+                                    <PackingListView
+                                        sessions={seniorSessions}
+                                        onOpenSession={handleOpenSession}
+                                    />
+                                </section>
+                            </div>
                         ) : (
                             <PackingSessionView
                                 schoolName={activeSession.school_name}
+                                schoolCode={activeSession.school_code}
                                 orders={activeSession.orders}
                                 onPack={handleDirectPack}
                                 onBack={handleBackToPackingList}
                                 onReportIssue={setExceptionOrder}
                                 onUpdateOrder={handleUpdateOrder}
+                                onFinishPackOut={handleFinishPackOut}
                             />
                         )}
                     </>

@@ -31,8 +31,8 @@ interface GarmentGroup {
 }
 
 // Stat pill for mobile card — compact for density
-const StatPill = ({ label, value, variant = 'default' }: { label: string; value: number | string; variant?: 'indigo' | 'amber' | 'red' | 'emerald' | 'default' }) => {
-    const v = variant === 'indigo' ? 'text-indigo-600' : variant === 'amber' ? 'text-amber-600' : variant === 'red' ? 'text-red-600' : variant === 'emerald' ? 'text-emerald-600' : 'text-slate-700';
+const StatPill = ({ label, value, variant = 'default' }: { label: string; value: number | string; variant?: 'emerald' | 'amber' | 'red' | 'default' }) => {
+    const v = variant === 'emerald' ? 'text-emerald-600' : variant === 'amber' ? 'text-amber-600' : variant === 'red' ? 'text-red-600' : 'text-slate-700';
     return (
         <div className="flex justify-between items-center py-0.5 border-b border-slate-100 last:border-0">
             <span className="text-[11px] text-slate-500">{label}</span>
@@ -88,7 +88,7 @@ const GarmentRow = ({
                     {/* Row 2: Compact 2x2 stats only (Available already in grid — no duplicate row) */}
                     <div className="px-3 pb-2 pt-0">
                         <div className="grid grid-cols-2 gap-x-3 gap-y-0 text-xs border-t border-slate-100 pt-2">
-                            <StatPill label="In Transit" value={garment.totalTransit > 0 ? garment.totalTransit : '-'} variant="indigo" />
+                            <StatPill label="In Transit" value={garment.totalTransit > 0 ? garment.totalTransit : '-'} variant="emerald" />
                             <StatPill label="On Shelf" value={garment.totalShelf} />
                             <StatPill label="Unprocessed" value={garment.totalUnprocessed > 0 ? garment.totalUnprocessed : '-'} variant="amber" />
                             <StatPill label="Available" value={garment.totalAvailable} variant={garment.totalAvailable < 0 ? 'red' : 'emerald'} />
@@ -115,7 +115,7 @@ const GarmentRow = ({
                 {/* Aggregated Stats */}
                 <div className="flex-[2] flex items-center justify-end font-medium">
                     <div className="w-32 text-right pr-4">
-                        <span className={`text-sm ${garment.totalTransit > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>
+                        <span className={`text-sm ${garment.totalTransit > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
                             {garment.totalTransit > 0 ? garment.totalTransit : '-'}
                         </span>
                     </div>
@@ -157,7 +157,7 @@ const GarmentRow = ({
                                     <span className="text-slate-500 truncate">Shelf</span>
                                     <span className="text-slate-500 truncate">Open</span>
                                     <span className="text-slate-500 truncate">Avail</span>
-                                    <span className={`font-semibold ${item.stock_in_transit > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>{item.stock_in_transit || 0}</span>
+                                    <span className={`font-semibold ${item.stock_in_transit > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{item.stock_in_transit || 0}</span>
                                     <span className="font-semibold text-slate-700">{item.stock_on_shelf}</span>
                                     {item.unprocessed > 0 && onUnprocessedClick ? (
                                         <button type="button" onClick={(e) => { e.stopPropagation(); onUnprocessedClick(item); }} className="font-semibold text-amber-600 hover:underline text-left" title="View details">
@@ -170,7 +170,7 @@ const GarmentRow = ({
                                 </div>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onAdjust(item); }}
-                                    className="shrink-0 p-2 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors touch-manipulation"
+                                    className="shrink-0 p-2 rounded-md text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors touch-manipulation"
                                     title="Adjust Stock"
                                 >
                                     <Edit className="w-4 h-4" />
@@ -198,7 +198,7 @@ const GarmentRow = ({
                                     <tr key={`${item.id}-${item.size}`} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-5 py-3 font-semibold text-slate-800">{item.size}</td>
                                         <td className="px-5 py-3 text-right">
-                                            <span className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full ${item.stock_in_transit > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/50' : 'text-slate-400'}`}>
+                                            <span className={`inline-flex items-center justify-center min-w-[32px] h-6 px-2 text-xs font-semibold rounded-full ${item.stock_in_transit > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 'text-slate-400'}`}>
                                                 {item.stock_in_transit || 0}
                                             </span>
                                         </td>
@@ -231,7 +231,7 @@ const GarmentRow = ({
                                         <td className="px-5 py-3 text-right">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onAdjust(item); }}
-                                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors touch-manipulation"
+                                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors touch-manipulation"
                                                 title="Adjust Stock"
                                             >
                                                 <Edit className="w-4 h-4" />
@@ -560,18 +560,18 @@ export default function DigitalStock() {
     };
 
     return (
-        <div className="flex flex-col min-h-screen bg-slate-50/50 min-w-0 overflow-x-hidden">
-            {/* Sticky block: header + tab bar — mobile: minimal padding, zero dead space */}
-            <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm min-w-0">
-            <div className={`flex flex-col min-w-0 ${isMobile ? 'px-3 py-2 gap-1.5' : 'px-4 sm:px-6 py-4 gap-4'}`}>
+        <div className="flex flex-col min-h-screen bg-slate-50 min-w-0 overflow-x-hidden">
+            {/* Header + tab bar — full width, left-aligned like Orders module */}
+            <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.03)] min-w-0">
+            <div className={`w-full min-w-0 flex flex-col ${isMobile ? 'px-3 py-2 gap-1.5' : 'px-0 py-5 gap-4'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 min-w-0">
-                    <div className="min-w-0 flex-1">
-                        <h1 className={`font-bold text-slate-900 flex items-center gap-1.5 min-w-0 ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'}`}>
-                            <Package className={`text-slate-500 shrink-0 ${isMobile ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
-                            <span className="truncate">Digital In-House Stock</span>
+                    <div className="shrink-0 text-left">
+                        <h1 className={`font-bold text-slate-900 tracking-tight inline-flex items-center gap-2 ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+                            <Package className={`text-slate-500 shrink-0 ${isMobile ? 'w-4 h-4' : 'w-6 h-6'}`} />
+                            <span>Digital In-House Stock</span>
                         </h1>
                         {!isMobile && (
-                        <p className="text-slate-500 mt-0.5 sm:mt-1 text-xs sm:text-sm break-words">
+                        <p className="text-slate-500 font-medium mt-0.5 text-sm">
                             Manage shelf inventory, transit stock, and reserved quantities.
                         </p>
                         )}
@@ -587,7 +587,7 @@ export default function DigitalStock() {
                             placeholder="Search Garment or School..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all focus:bg-white"
+                            className="w-full pl-9 pr-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all focus:bg-white"
                         />
                     </div>
                     )}
@@ -600,7 +600,7 @@ export default function DigitalStock() {
                         placeholder="Search Garment or School..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2 min-h-[36px] text-sm bg-slate-50 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full pl-8 pr-3 py-2 min-h-[36px] text-sm bg-slate-50 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                     />
                 </div>
                 )}
@@ -614,7 +614,7 @@ export default function DigitalStock() {
                     </button>
                     <button
                         onClick={() => setShowAddProduct(true)}
-                        className={`flex items-center justify-center gap-1 font-medium rounded-lg transition-colors shadow-sm touch-manipulation bg-blue-600 text-white hover:bg-blue-700 ${isMobile ? 'min-h-[36px] px-2.5 py-1.5 text-xs' : 'min-h-[44px] px-4 py-2.5 sm:py-2 text-sm'}`}
+                        className={`flex items-center justify-center gap-1 font-medium rounded-lg transition-colors shadow-sm touch-manipulation bg-slate-900 text-white hover:bg-slate-800 ${isMobile ? 'min-h-[36px] px-2.5 py-1.5 text-xs' : 'min-h-[44px] px-4 py-2.5 sm:py-2 text-sm'}`}
                     >
                         <Plus className={isMobile ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
                         Product
@@ -630,8 +630,8 @@ export default function DigitalStock() {
                 </div>
             </div>
 
-            {/* Tab bar — mobile: compact */}
-            <div className={isMobile ? 'px-3 pb-1 pt-0' : 'px-4 sm:px-6 pb-2 pt-0'}>
+            {/* Tab bar */}
+            <div className={isMobile ? 'px-3 pb-1 pt-0' : 'pb-2 pt-0'}>
                 <div className="flex rounded-lg bg-slate-100 p-0.5 gap-0.5" role="tablist">
                     <button
                         role="tab"
@@ -654,11 +654,17 @@ export default function DigitalStock() {
                     </button>
                 </div>
             </div>
-                {/* Sticky column header for inventory — desktop only; mobile uses cards */}
+                {/* Table banner moved to main content so it aligns with cards — see below when inventory active */}
+            </div>
+
+            {/* Main content — full width, left-aligned like Orders (main already has p-8 from AppShell) */}
+            <div className={`flex-1 w-full min-w-0 ${isMobile ? 'p-2 pb-8' : 'py-6'}`}>
+
+                {/* Sticky table header — desktop inventory only; lives here so it aligns with cards */}
                 {!isMobile && activeTab === 'inventory' && groupedStock.length > 0 && (
-                    <div className="flex items-center px-4 sm:px-6 py-2.5 bg-slate-100 border-t border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        <div className="flex-1 pl-10 pr-4">Garment Style</div>
-                        <div className="flex-[2] flex justify-end">
+                    <div className="sticky top-0 z-10 flex items-center py-2.5 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider -mx-0 mb-0">
+                        <div className="flex-1 pl-4 pr-4 min-w-0">Garment Style</div>
+                        <div className="flex-[2] flex justify-end shrink-0">
                             <div className="w-32 text-right pr-4">In Transit</div>
                             <div className="w-32 text-right pr-4">On Shelf</div>
                             <div className="w-32 text-right pr-4">Unprocessed</div>
@@ -667,19 +673,15 @@ export default function DigitalStock() {
                         </div>
                     </div>
                 )}
-            </div>
-
-            {/* Main Content — mobile: minimal padding for max content */}
-            <div className={`flex-1 max-w-screen-2xl mx-auto w-full min-w-0 ${isMobile ? 'p-2 pb-8' : 'p-4 sm:p-6 lg:p-8'}`}>
 
                 {/* Schools Tab */}
                 {activeTab === 'schools' && (
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden min-w-0">
                         <div className={`bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 ${isMobile ? 'px-3 py-2' : 'px-6 py-4'}`}>
                             <h2 className="text-base font-bold text-slate-800 truncate min-w-0">All Active Schools</h2>
                             <button
                                 onClick={() => setShowAddSchool(true)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#002D2B] text-white rounded-lg text-xs font-semibold hover:bg-[#004440] transition-colors shadow-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors shadow-sm"
                             >
                                 <Plus className="w-3 h-3" />
                                 Add School
@@ -775,9 +777,9 @@ export default function DigitalStock() {
                     ) : (
                         <div className={`space-y-4 pb-8 min-w-0 ${isMobile ? 'space-y-3 pb-6' : 'space-y-8 pb-12'}`}>
                             {groupedStock.map(({ schoolName, garments }) => (
-                                <div key={schoolName} className="bg-white rounded-lg sm:rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
-                                    {/* School Header — mobile: compact */}
-                                    <div className={`bg-[#002D2B] border-b border-[#001f1e] flex items-center justify-between group/school gap-2 min-w-0 ${isMobile ? 'px-3 py-2' : 'px-4 sm:px-6 py-4'}`}>
+                                <div key={schoolName} className="bg-white rounded-xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden min-w-0">
+                                    {/* School header */}
+                                    <div className={`bg-[#002D2B] border-b border-[#004440] flex items-center justify-between group/school gap-2 min-w-0 ${isMobile ? 'px-3 py-2' : 'px-6 py-4'}`}>
                                         <h2 className={`font-bold text-white uppercase tracking-wider flex items-center gap-2 min-w-0 truncate ${isMobile ? 'text-sm' : 'text-base sm:text-lg'}`}>
                                             <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 shrink-0" />
                                             {schoolName}
@@ -845,7 +847,7 @@ export default function DigitalStock() {
                             <div className="grid grid-cols-2 gap-4">
                                 {/* In Transit Input */}
                                 <div className="space-y-2">
-                                    <label className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 uppercase tracking-wider">
+                                    <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 uppercase tracking-wider">
                                         <Truck className="w-3.5 h-3.5" />
                                         In-Transit
                                     </label>
@@ -855,7 +857,7 @@ export default function DigitalStock() {
                                             min="0"
                                             value={newTransitStock}
                                             onChange={(e) => setNewTransitStock(parseInt(e.target.value) || 0)}
-                                            className="w-full pl-3 pr-8 py-2.5 border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-shadow"
+                                            className="w-full pl-3 pr-8 py-2.5 border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-shadow"
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-medium">qty</span>
                                     </div>
@@ -874,7 +876,7 @@ export default function DigitalStock() {
                                             min="0"
                                             value={newShelfStock}
                                             onChange={(e) => setNewShelfStock(parseInt(e.target.value) || 0)}
-                                            className="w-full pl-3 pr-8 py-2.5 border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white transition-shadow shadow-sm"
+                                            className="w-full pl-3 pr-8 py-2.5 border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white transition-shadow shadow-sm"
                                             autoFocus
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-medium">qty</span>
@@ -883,12 +885,12 @@ export default function DigitalStock() {
                                 </div>
                             </div>
 
-                            <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100 shadow-sm">
+                            <div className="p-3 bg-emerald-50/50 rounded-lg border border-emerald-100 shadow-sm">
                                 <p className="text-sm text-slate-700 flex justify-between items-center font-medium">
                                     <span className="text-slate-600">Unprocessed Orders</span>
                                     <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-xs">{isAdjusting.unprocessed}</span>
                                 </p>
-                                <hr className="my-2 border-blue-100/60" />
+                                <hr className="my-2 border-emerald-100/60" />
                                 <p className="text-base text-slate-800 flex justify-between items-center font-bold">
                                     <span>Available Stock</span>
                                     <span className={`px-2 py-0.5 rounded border text-sm ${newShelfStock - isAdjusting.unprocessed < 0 ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'}`}>
@@ -907,7 +909,7 @@ export default function DigitalStock() {
                             <button
                                 onClick={submitAdjustment}
                                 disabled={updating}
-                                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 shadow-sm transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none"
                             >
                                 {updating ? 'Saving...' : 'Save Stock Updates'}
                             </button>
@@ -972,11 +974,11 @@ export default function DigitalStock() {
                                                         {editingRow?.order_item_id === row.order_item_id ? (
                                                             <div className="flex justify-end gap-1">
                                                                 <button onClick={() => setEditingRow(null)} className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
-                                                                <button onClick={handleSaveEditQty} disabled={savingRow} className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">Save</button>
+                                                                <button onClick={handleSaveEditQty} disabled={savingRow} className="px-2 py-1 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded disabled:opacity-50">Save</button>
                                                             </div>
                                                         ) : (
                                                             <div className="flex justify-end gap-1">
-                                                                <button onClick={() => { setEditingRow(row); setEditQty(row.quantity); }} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit quantity"><Edit className="w-4 h-4" /></button>
+                                                                <button onClick={() => { setEditingRow(row); setEditQty(row.quantity); }} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="Edit quantity"><Edit className="w-4 h-4" /></button>
                                                                 <button onClick={() => handleClearUnprocessed(row)} disabled={savingRow} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Set quantity to 0"><Eraser className="w-4 h-4" /></button>
                                                             </div>
                                                         )}
@@ -1016,7 +1018,7 @@ export default function DigitalStock() {
                                     value={newSchoolName}
                                     onChange={(e) => setNewSchoolName(e.target.value)}
                                     placeholder="e.g. Flaxmill Primary School"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                     autoFocus
                                 />
                             </div>
@@ -1027,7 +1029,7 @@ export default function DigitalStock() {
                                     value={newSchoolCode}
                                     onChange={(e) => setNewSchoolCode(e.target.value.toUpperCase())}
                                     placeholder="e.g. FLAXMILL"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                                 <p className="text-[10px] text-slate-500">Short unique code used for internal reference</p>
                             </div>
@@ -1067,7 +1069,7 @@ export default function DigitalStock() {
                                     value={newProductName}
                                     onChange={(e) => setNewProductName(e.target.value)}
                                     placeholder="e.g. Polo Shirt - Navy"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                     autoFocus
                                 />
                             </div>
@@ -1078,7 +1080,7 @@ export default function DigitalStock() {
                                     value={newProductSku}
                                     onChange={(e) => setNewProductSku(e.target.value)}
                                     placeholder="e.g. FLAX-POLO-NVY"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                             </div>
                             <div className="space-y-1.5">
@@ -1086,7 +1088,7 @@ export default function DigitalStock() {
                                 <select
                                     value={newProductSchoolId}
                                     onChange={(e) => setNewProductSchoolId(e.target.value)}
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
                                 >
                                     <option value="">No school (Global)</option>
                                     {schools.map(s => (
@@ -1101,7 +1103,7 @@ export default function DigitalStock() {
                                     value={newProductSizes}
                                     onChange={(e) => setNewProductSizes(e.target.value)}
                                     placeholder="4, 6, 8, 10, 12, 14, 16 (even sizes only)"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                                 <p className="text-[10px] text-slate-500">Comma-separated. Numeric sizes: even only (4, 6, 8 … 16). Letter sizes (S, M, L, XL) allowed.</p>
                             </div>
@@ -1111,7 +1113,7 @@ export default function DigitalStock() {
                                     id="embroidery-check"
                                     checked={newProductEmbroidery}
                                     onChange={(e) => setNewProductEmbroidery(e.target.checked)}
-                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                                 />
                                 <label htmlFor="embroidery-check" className="text-sm text-slate-700 font-medium">Requires Embroidery</label>
                             </div>
@@ -1121,7 +1123,7 @@ export default function DigitalStock() {
                             <button
                                 onClick={handleAddProduct}
                                 disabled={addingProduct || !newProductName || !newProductSku}
-                                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors"
+                                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 shadow-sm transition-colors"
                             >
                                 {addingProduct ? 'Adding...' : 'Add Product'}
                             </button>

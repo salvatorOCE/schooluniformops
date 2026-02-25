@@ -14,6 +14,9 @@ export interface OrderItem {
   requires_embroidery: boolean;
   embroidery_status?: 'PENDING' | 'DONE'; // Track item-level status
   unit_price?: number; // For bulk orders / edit
+  /** Garment reference images from WooCommerce (front/back) */
+  image_front_url?: string | null;
+  image_back_url?: string | null;
 }
 
 export interface School {
@@ -274,14 +277,21 @@ export interface HistoryEvent {
 }
 
 export interface OrderHistoryItem {
+  /** Order item UUID for matching product images API */
+  itemId?: string;
   sku: string;
   productName: string;
   size: string;
   qty: number;
   status: 'PENDING' | 'EMBROIDERY' | 'PACKED' | 'DISPATCHED';
+  /** Garment reference images from WooCommerce (front/back) */
+  imageFrontUrl?: string | null;
+  imageBackUrl?: string | null;
 }
 
 export interface OrderHistoryRecord {
+  /** Internal order UUID (for API calls e.g. fetching product images) */
+  id?: string;
   orderId: string;
   studentName: string;
   parentName: string;
@@ -292,6 +302,8 @@ export interface OrderHistoryRecord {
   items: OrderHistoryItem[];
   createdAt: Date;
   updatedAt: Date;
+  /** When payment was captured (if known) */
+  paidAt?: Date;
   hasIssues: boolean;
   hasPartialEmbroidery: boolean;
   events: HistoryEvent[];
@@ -316,5 +328,43 @@ export interface RunHistoryRecord {
   operator: string;
   status: 'COMPLETED' | 'PARTIAL';
   timestamp: Date;
+}
+
+// Pack-out manifest: record of orders packed in a session (for school run / PDF + Order Tracking)
+export interface PackOutManifestOrderSummary {
+  order_id: string;
+  order_number: string;
+  student_name: string | null;
+  /** Parent / guardian name for contact on manifest */
+  parent_name?: string | null;
+  /** Delivery method snapshot (HOME / SCHOOL / STORE) */
+  delivery_type?: DeliveryType;
+  /** Short, printable address for HOME deliveries (single line) */
+  address_summary?: string | null;
+  item_count: number;
+  items_summary: string; // e.g. "2x Polo 8, 1x Shorts 10"
+}
+
+export interface PackOutManifest {
+  id: string;
+  school_code: string;
+  school_name: string;
+  packed_at: string; // ISO
+  orders: PackOutManifestOrderSummary[];
+}
+
+// Important Notes — shared team notes with optional photos and priority
+export type ImportantNotePriority = 'LOW' | 'NORMAL' | 'HIGH';
+
+export interface ImportantNote {
+  id: string;
+  title: string;
+  body: string;
+  priority: ImportantNotePriority;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Public URLs of attached images (e.g. from Supabase Storage) */
+  image_urls: string[];
 }
 

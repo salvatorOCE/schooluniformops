@@ -2,6 +2,7 @@
 
 import { Order } from '@/lib/types';
 import { AgeBadge } from './AgeBadge';
+import { format } from 'date-fns';
 
 interface OrderCardProps {
     order: Order;
@@ -35,9 +36,12 @@ export function OrderCard({ order, showAge = true, actions, onClick }: OrderCard
                     </div>
                     <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
                         <span className="text-slate-900">{order.parent_name}</span>
-                        {/* <span className="text-slate-300">•</span>
-                        <span>{order.email}</span> */}
                     </div>
+                    {order.paid_at && (
+                        <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                            Paid {format(new Date(order.paid_at), 'dd MMM p')}
+                        </div>
+                    )}
                 </div>
                 {showAge && <AgeBadge timestamp={order.paid_at} />}
             </div>

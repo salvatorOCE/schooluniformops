@@ -36,10 +36,12 @@ function PackageX(props: any) { return <svg {...props} xmlns="http://www.w3.org/
 export function FixUpList({ fixUps, onSelect, onUpdateStatus }: FixUpListProps) {
     if (fixUps.length === 0) {
         return (
-            <div className="text-center py-12 bg-slate-50 rounded-xl border-dashed border-2 border-slate-200">
-                <CheckCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-lg font-medium text-slate-900">No Active Fix-Ups</h3>
-                <p className="text-slate-500">Production is running smoothly.</p>
+            <div className="text-center py-16 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-7 h-7 text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">No active fix-ups</h3>
+                <p className="text-slate-500 mt-1">Production is running smoothly.</p>
             </div>
         );
     }
@@ -54,13 +56,14 @@ export function FixUpList({ fixUps, onSelect, onUpdateStatus }: FixUpListProps) 
                 return (
                     <div
                         key={fix.id}
-                        className="bg-white border border-slate-200 rounded-lg p-4 hover:border-indigo-300 hover:shadow-md transition-all group relative"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onSelect(fix)}
+                        onKeyDown={(e) => e.key === 'Enter' && onSelect(fix)}
+                        className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-slate-300 hover:shadow transition-all group relative cursor-pointer"
                     >
                         <div className="flex items-start justify-between">
-                            <div
-                                className="flex items-start gap-4 flex-1 cursor-pointer"
-                                onClick={() => onSelect(fix)}
-                            >
+                            <div className="flex items-start gap-4 flex-1 min-w-0">
                                 <div className={`p-3 rounded-full ${config.bg} ${config.color} shrink-0`}>
                                     <Icon className="w-6 h-6" />
                                 </div>
@@ -89,15 +92,25 @@ export function FixUpList({ fixUps, onSelect, onUpdateStatus }: FixUpListProps) 
                                             </span>
                                         ))}
                                     </div>
+
+                                    {fix.notes && fix.notes.trim() && (
+                                        <div className="mt-2 text-sm text-slate-600 bg-amber-50/80 border border-amber-100 rounded-lg px-3 py-2">
+                                            <span className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Notes:</span>
+                                            <p className="mt-0.5 text-slate-700 whitespace-pre-wrap line-clamp-2">{fix.notes.trim()}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="text-right flex flex-col items-end gap-2">
+                            <div
+                                className="text-right flex flex-col items-end gap-2 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                            >
                                 <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</div>
                                 <select
                                     value={fix.status}
                                     onChange={(e) => onUpdateStatus(fix.id, e.target.value)}
-                                    className={`text-sm font-bold px-3 py-1.5 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer ${statusConfig.bg}`}
+                                    className={`text-sm font-bold px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none ${statusConfig.bg}`}
                                 >
                                     {Object.entries(STATUSES).map(([key, val]) => (
                                         <option key={key} value={key}>{val.label}</option>

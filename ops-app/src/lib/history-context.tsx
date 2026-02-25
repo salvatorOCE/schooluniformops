@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useData } from './data-provider';
 import {
     HistoryEntityType,
@@ -20,8 +20,9 @@ interface HistoryContextType {
     runs: RunHistoryRecord[];
     loading: boolean;
     logEvent: (event: Omit<HistoryEvent, 'id' | 'timestamp'>) => void;
-    // Simple lookups
     getOrder: (orderId: string) => OrderHistoryRecord | undefined;
+    /** Refetch orders/batches/runs from the adapter (e.g. after syncing dates from WooCommerce) */
+    refresh: () => Promise<void>;
 }
 
 const HistoryContext = createContext<HistoryContextType | undefined>(undefined);
@@ -35,26 +36,29 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     const [runs, setRuns] = useState<RunHistoryRecord[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const load = async () => {
-            setLoading(true);
-            try {
-                const [o, b, r] = await Promise.all([
-                    adapter.getHistoryOrders(),
-                    adapter.getHistoryBatches(),
-                    adapter.getHistoryRuns()
-                ]);
-                setOrders(o);
-                setBatches(b);
-                setRuns(r);
-            } catch (error) {
-                console.error("Failed to load history data:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        load();
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [o, b, r] = await Promise.all([
+                adapter.getHistoryOrders(),
+                adapter.getHistoryBatches(),
+                adapter.getHistoryRuns()
+            ]);
+            setOrders(o);
+            setBatches(b);
+            setRuns(r);
+        } catch (error) {
+            console.error("Failed to load history data:", error);
+        } finally {
+            setLoading(false);
+        }
     }, [adapter]);
+
+    useEffect(() => {
+        load();
+    }, [load]);
+
+    const refresh = useCallback(() => load(), [load]);
 
     const logEvent = (eventData: Omit<HistoryEvent, 'id' | 'timestamp'>) => {
         const newEvent: HistoryEvent = {
@@ -84,7 +88,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     const getOrder = (orderId: string) => orders.find(o => o.orderId === orderId);
 
     return (
-        <HistoryContext.Provider value={{ orders, batches, runs, loading, logEvent, getOrder }}>
+        <HistoryContext.Provider value={{ orders, batches, runs, loading, logEvent, getOrder, refresh }}>
             {children}
         </HistoryContext.Provider>
     );

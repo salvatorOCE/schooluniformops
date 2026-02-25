@@ -25,17 +25,14 @@ export function MobileHeader() {
 
     return (
         <>
-            {/* Top Navigation Bar */}
-            <header className="h-16 bg-[#002D2B] text-white flex items-center justify-between px-4 border-b border-[#004440] z-40 sticky top-0 shadow-md w-full">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-[#19966D] rounded-md flex items-center justify-center shadow-lg">
-                        <span className="font-bold text-white text-lg">S</span>
-                    </div>
-                    <span className="font-bold text-lg tracking-tight text-white">OPS APP</span>
-                </div>
+            {/* Top Navigation Bar — light green banner, logo fills height */}
+            <header className="relative h-[104px] min-h-[104px] bg-emerald-100 flex items-stretch px-3 py-0 border-b border-emerald-200 z-40 sticky top-0 shadow-md w-full">
+                <Link href="/" className="flex items-stretch flex-1 min-w-0 justify-start">
+                    <img src="/logo.png" alt="School Uniform Solutions" className="h-full w-auto max-w-full object-contain object-left" />
+                </Link>
                 <button
                     onClick={() => setIsOpen(true)}
-                    className="p-2 hover:bg-[#004440] rounded-md transition-colors"
+                    className="p-2 hover:bg-emerald-200/80 rounded-md transition-colors text-slate-700 absolute right-4 top-1/2 -translate-y-1/2"
                 >
                     <Menu className="w-6 h-6" />
                 </button>
@@ -44,19 +41,13 @@ export function MobileHeader() {
             {/* Slide-over Menu Overlay */}
             {isOpen && (
                 <div className="absolute inset-0 z-50 flex flex-col bg-[#002D2B] text-white animate-in slide-in-from-right duration-200 h-full w-full">
-                    <div className="h-16 flex items-center justify-between px-4 border-b border-[#004440] bg-[#002523] shrink-0">
-                        <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 bg-[#19966D] rounded-md flex items-center justify-center shadow-lg">
-                                    <span className="font-bold text-white text-lg">S</span>
-                                </div>
-                                <span className="font-bold text-lg tracking-tight text-white">OPS MANAGER</span>
-                            </div>
-                            <span className="text-[10px] text-emerald-400/80 font-medium pl-10 -mt-1 tracking-wider uppercase">School Uniform Solutions</span>
-                        </div>
+                    <div className="relative h-[104px] min-h-[104px] flex items-stretch px-3 py-0 border-b border-emerald-200 bg-emerald-100 shrink-0">
+                        <Link href="/" onClick={() => setIsOpen(false)} className="flex items-stretch flex-1 min-w-0 justify-start">
+                            <img src="/logo.png" alt="School Uniform Solutions" className="h-full w-auto max-w-full object-contain object-left" />
+                        </Link>
                         <button
                             onClick={() => setIsOpen(false)}
-                            className="p-2 hover:bg-[#004440] rounded-md transition-colors bg-[#002D2B] shadow-lg"
+                            className="p-2 hover:bg-emerald-200/80 rounded-md transition-colors text-slate-700 absolute right-4 top-1/2 -translate-y-1/2"
                         >
                             <X className="w-6 h-6" />
                         </button>

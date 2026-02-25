@@ -380,6 +380,8 @@ const mockFixUps: import('./types').FixUpRequest[] = [
     }
 ];
 
+const mockPackOutManifests: import('./types').PackOutManifest[] = [];
+
 export class MockAdapter implements DataAdapter {
     async getDashboardStats(): Promise<DashboardStats> {
         const today = new Date();
@@ -551,7 +553,7 @@ export class MockAdapter implements DataAdapter {
         const order = mockOrders.find(o => o.id === orderId);
         if (order) {
             const prevState = { ...order };
-            order.order_status = 'DISPATCHED';
+            order.order_status = 'Shipped';
             order.dispatched_at = new Date().toISOString();
 
             await EventLogger.log(order.id, 'ORDER', 'STATUS_CHANGE', 'SYSTEM', {
@@ -628,13 +630,12 @@ export class MockAdapter implements DataAdapter {
         const orders = mockOrders.filter(o =>
             o.school_code === schoolCode &&
             o.delivery_type === 'SCHOOL' &&
-            o.order_status === 'PACKED'
+            o.order_status === 'Shipped'
         );
 
         for (const order of orders) {
             const prevState = { ...order };
-            order.order_status = 'DISPATCHED';
-            order.dispatched_at = new Date().toISOString();
+            order.order_status = 'Completed';
 
             await EventLogger.log(order.id, 'ORDER', 'STATUS_CHANGE', 'LOGISTICS', {
                 prevState: { status: prevState.order_status },
@@ -853,6 +854,7 @@ export class MockAdapter implements DataAdapter {
         const historyOrders = mockOrders.map(o => {
             // Map items
             const items = o.items.map(i => ({
+                itemId: i.id,
                 sku: i.sku,
                 productName: i.product_name,
                 size: i.size || 'N/A',
@@ -904,6 +906,7 @@ export class MockAdapter implements DataAdapter {
             if (o.order_status === 'DISPATCHED' || o.order_status === 'COLLECTED') status = 'COMPLETED';
 
             return {
+                id: o.id,
                 orderId: o.order_number,
                 studentName: o.student_name || 'N/A',
                 parentName: o.parent_name,
@@ -1081,6 +1084,20 @@ export class MockAdapter implements DataAdapter {
         ).slice(0, 20);
     }
 
+    async savePackOutManifest(manifest: import('./types').PackOutManifest): Promise<void> {
+        mockPackOutManifests.push(manifest);
+    }
+
+    async getPackOutManifests(): Promise<import('./types').PackOutManifest[]> {
+        return [...mockPackOutManifests].sort((a, b) => new Date(b.packed_at).getTime() - new Date(a.packed_at).getTime());
+    }
+
+    async getDeliveredOrders(): Promise<Order[]> {
+        return mockOrders
+            .filter(o => o.order_status === 'DISPATCHED' || o.order_status === 'COLLECTED')
+            .sort((a, b) => (b.dispatched_at || b.packed_at || '').localeCompare(a.dispatched_at || a.packed_at || ''));
+    }
+
     async createFixUp(request: Partial<import('./types').FixUpRequest>): Promise<void> {
         const newFixUp: import('./types').FixUpRequest = {
             id: `fix-${Date.now()}`,
@@ -1121,6 +1138,16 @@ export class MockAdapter implements DataAdapter {
                 newState: { status },
                 metadata: { method: 'updateFixUpStatus' }
             });
+        }
+    }
+
+    async updateFixUp(id: string, updates: { notes?: string; status?: import('./types').FixUpStatus }): Promise<void> {
+        const fixUp = mockFixUps.find(f => f.id === id);
+        if (!fixUp) return;
+        if (updates.notes !== undefined) fixUp.notes = updates.notes;
+        if (updates.status !== undefined) {
+            fixUp.status = updates.status;
+            if (updates.status === 'CLOSED') fixUp.resolved_at = new Date().toISOString();
         }
     }
 

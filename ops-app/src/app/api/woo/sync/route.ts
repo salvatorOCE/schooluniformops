@@ -78,16 +78,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, data: response.data }, { status: 200 });
 
     } catch (error: any) {
-        // Detailed error logging
+        const statusCode = error.response?.status;
+        const wooData = error.response?.data;
+
         console.error('================ WOO SYNC API ERROR ================');
         console.error('Failed processing wooOrderId:', body?.wooOrderId || 'unknown');
         if (error.response) {
-            console.error('Woo Status Code:', error.response.status);
-            console.error('Woo Error Data:', JSON.stringify(error.response.data, null, 2));
+            console.error('Woo Status Code:', statusCode);
+            console.error('Woo Error Data:', JSON.stringify(wooData, null, 2));
         } else {
             console.error('Error Message:', error.message);
         }
         console.error('====================================================');
+
+        // 400 = WooCommerce rejected the status (e.g. custom status "packed" not registered).
+        // Return 200 with success: false so the client doesn't block the pack flow.
+        if (statusCode === 400) {
+            return NextResponse.json({
+                success: false,
+                error: 'WooCommerce rejected the status. Your store may not have custom statuses (e.g. "packed"). Order was updated in Ops only.',
+                details: typeof wooData?.message === 'string' ? wooData.message : error.message
+            }, { status: 200 });
+        }
 
         return NextResponse.json({ error: 'Failed to sync with WooCommerce', details: error.message }, { status: 500 });
     }

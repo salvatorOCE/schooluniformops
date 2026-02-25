@@ -6,14 +6,17 @@ import { HistoryFilterBar, HistoryFilters } from '@/components/history/HistoryFi
 import { HistoryList } from '@/components/history/HistoryList';
 import { HistoryDetailDrawer } from '@/components/history/HistoryDetailDrawer';
 import { fuzzyMatch } from '@/lib/fuzzy-search';
-import { Package, Layers, Activity, Download } from 'lucide-react';
+import { Package, Layers, Activity, Download, RefreshCw } from 'lucide-react';
 import { OrderHistoryRecord } from '@/lib/types';
 import { BatchHistoryTable } from '@/components/history/BatchHistoryTable';
 import { RunHistoryTable } from '@/components/history/RunHistoryTable';
 import { exportToCSV } from '@/lib/csv-export';
+import { useToast } from '@/lib/toast-context';
 
 function HistoryPageContent() {
-    const { orders, batches, runs } = useHistory();
+    const { orders, batches, runs, refresh } = useHistory();
+    const { toast } = useToast();
+    const [syncingDates, setSyncingDates] = useState(false);
     const [activeTab, setActiveTab] = useState<'ORDERS' | 'BATCHES' | 'RUNS'>('ORDERS');
     const [selectedOrder, setSelectedOrder] = useState<OrderHistoryRecord | null>(null);
 
@@ -46,8 +49,9 @@ function HistoryPageContent() {
         return true;
     });
 
-    // Sort by newest
-    const sortedOrders = [...filteredOrders].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    // Sort by order date (paid or created), newest first – matches Dates column
+    const orderDate = (o: OrderHistoryRecord) => (o.paidAt || o.createdAt).getTime();
+    const sortedOrders = [...filteredOrders].sort((a, b) => orderDate(b) - orderDate(a));
 
     return (
         <div className="space-y-3 md:space-y-6 px-2 md:px-0">
@@ -57,29 +61,54 @@ function HistoryPageContent() {
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Orders & History</h1>
                         <p className="hidden md:block text-slate-500 text-sm">Investigate past orders, production batches, and run logs.</p>
                     </div>
-                    <button
-                        onClick={() => {
-                            if (activeTab === 'ORDERS') {
-                                exportToCSV(sortedOrders, {
-                                    filename: 'order_history',
-                                    columns: [
-                                        { key: 'orderNumber', label: 'Order #' },
-                                        { key: 'customerName', label: 'Customer' },
-                                        { key: 'schoolName', label: 'School' },
-                                        { key: 'studentName', label: 'Student' },
-                                        { key: 'status', label: 'Status' },
-                                        { key: 'deliveryType', label: 'Delivery' },
-                                        { key: 'total', label: 'Total', formatter: (v: number) => v?.toFixed(2) || '0.00' },
-                                        { key: 'createdAt', label: 'Created' },
-                                    ]
-                                });
-                            }
-                        }}
-                        className="flex items-center w-fit gap-1.5 px-3 py-1.5 md:px-4 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
-                    >
-                        <Download className="w-4 h-4" />
-                        Export CSV
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {activeTab === 'ORDERS' && (
+                            <button
+                                onClick={async () => {
+                                    setSyncingDates(true);
+                                    try {
+                                        const res = await fetch('/api/woo/backfill-order-dates', { method: 'POST' });
+                                        const data = await res.json().catch(() => ({}));
+                                        if (!res.ok) throw new Error(data.error || 'Backfill failed');
+                                        await refresh();
+                                        toast.success(data.updated != null ? `Order dates updated: ${data.updated} orders now show correct placed/paid dates.` : 'Order dates refreshed from WooCommerce.');
+                                    } catch (e: any) {
+                                        toast.error(e.message || 'Failed to refresh dates from WooCommerce');
+                                    } finally {
+                                        setSyncingDates(false);
+                                    }
+                                }}
+                                disabled={syncingDates}
+                                className="flex items-center w-fit gap-1.5 px-3 py-1.5 md:px-4 md:py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs md:text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors shadow-sm disabled:opacity-60"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${syncingDates ? 'animate-spin' : ''}`} />
+                                {syncingDates ? 'Syncing…' : 'Refresh dates from Woo'}
+                            </button>
+                        )}
+                        <button
+                            onClick={() => {
+                                if (activeTab === 'ORDERS') {
+                                    exportToCSV(sortedOrders, {
+                                        filename: 'order_history',
+                                        columns: [
+                                            { key: 'orderNumber', label: 'Order #' },
+                                            { key: 'customerName', label: 'Customer' },
+                                            { key: 'schoolName', label: 'School' },
+                                            { key: 'studentName', label: 'Student' },
+                                            { key: 'status', label: 'Status' },
+                                            { key: 'deliveryType', label: 'Delivery' },
+                                            { key: 'total', label: 'Total', formatter: (v: number) => v?.toFixed(2) || '0.00' },
+                                            { key: 'createdAt', label: 'Created' },
+                                        ]
+                                    });
+                                }
+                            }}
+                            className="flex items-center w-fit gap-1.5 px-3 py-1.5 md:px-4 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+                        >
+                            <Download className="w-4 h-4" />
+                            Export CSV
+                        </button>
+                    </div>
                 </div>
             </header>
 
