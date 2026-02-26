@@ -20,7 +20,8 @@ import {
     School,
     Search,
     LogOut,
-    StickyNote
+    StickyNote,
+    ListOrdered
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
@@ -52,6 +53,7 @@ export const navItems: NavItem[] = [
     { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
     { href: '/school-portal', label: 'School Portal', icon: School },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
+    { href: '/products', label: 'All Products', icon: ListOrdered },
     { href: '/tracking', label: 'Order Tracking', icon: Search },
 ];
 
@@ -65,6 +67,7 @@ export const mainNavItems: NavItem[] = [
     { href: '/school-runs', label: 'School Bulk', icon: Bus },
     { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
+    { href: '/products', label: 'All Products', icon: ListOrdered },
 ];
 
 /** Work in progress (bottom section) */

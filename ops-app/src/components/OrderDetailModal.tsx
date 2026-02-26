@@ -4,20 +4,36 @@ import { Order, OrderStatus, SystemEvent } from '@/lib/types';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
 import { X, User, ShoppingBag, Truck, ImageIcon } from 'lucide-react';
 import { OrderTimeline } from '@/components/history/OrderTimeline';
-import { MockAdapter } from '@/lib/mock-adapter';
+import { useData } from '@/lib/data-provider';
 import { useEffect, useState } from 'react';
-
-const adapter = new MockAdapter();
 
 interface OrderDetailModalProps {
     order: Order | null;
     onClose: () => void;
     isOpen: boolean;
+    /** Called after sent quantities are updated so parent can refetch the order. */
+    onOrderUpdated?: () => void;
 }
 
-export function OrderDetailModal({ order, onClose, isOpen }: OrderDetailModalProps) {
+export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: OrderDetailModalProps) {
+    const adapter = useData();
     const [events, setEvents] = useState<SystemEvent[]>([]);
     const [itemImages, setItemImages] = useState<Record<string, { front: string | null; back: string | null }>>({});
+    /** Per-item sent quantity (for Partial Order Complete). Key = item.id. */
+    const [sentQuantities, setSentQuantities] = useState<Record<string, number>>({});
+    const [savingSent, setSavingSent] = useState<string | null>(null);
+
+    const isPartialOrderComplete = order?.order_status === 'Partial Order Complete';
+
+    useEffect(() => {
+        if (order?.items) {
+            const next: Record<string, number> = {};
+            order.items.forEach(i => {
+                next[i.id] = i.sent_quantity ?? 0;
+            });
+            setSentQuantities(next);
+        }
+    }, [order?.id, order?.items?.map(i => `${i.id}:${i.sent_quantity ?? 0}`).join(',')]);
 
     useEffect(() => {
         if (isOpen && order) {
@@ -100,15 +116,58 @@ export function OrderDetailModal({ order, onClose, isOpen }: OrderDetailModalPro
                             {order.items.map((item, idx) => {
                                 const images = itemImages[item.id] || { front: null, back: null };
                                 const hasImages = images.front || images.back;
+                                const sentQty = sentQuantities[item.id] ?? item.sent_quantity ?? 0;
+                                const maxSent = item.quantity ?? 0;
+                                const isSaving = savingSent === item.id;
                                 return (
                                     <div key={item.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
                                         <table className="w-full text-sm">
                                             <tbody className="divide-y divide-slate-100">
                                                 <tr>
-                                                    <td className="px-3 py-2 font-medium text-slate-800">{item.product_name}</td>
+                                                    <td className="px-3 py-2 font-medium text-slate-800">
+                                                        <div>
+                                                            {item.product_name}
+                                                            {item.nickname && (
+                                                                <span className="ml-2 inline-flex items-center rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-800 border border-violet-200" title="Nickname for print/embroidery">
+                                                                    {item.nickname}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.sku}</td>
                                                     <td className="px-3 py-2 text-center">{item.size}</td>
                                                     <td className="px-3 py-2 text-center font-bold">{item.quantity}</td>
+                                                    {isPartialOrderComplete && (
+                                                        <td className="px-3 py-2">
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={maxSent}
+                                                                    className="w-14 border border-slate-200 rounded px-1.5 py-1 text-xs bg-teal-50/80"
+                                                                    value={sentQty}
+                                                                    disabled={isSaving}
+                                                                    onChange={(e) => {
+                                                                        const v = Math.max(0, Math.min(maxSent, parseInt(e.target.value, 10) || 0));
+                                                                        setSentQuantities(prev => ({ ...prev, [item.id]: v }));
+                                                                    }}
+                                                                    onBlur={async (e) => {
+                                                                        const raw = parseInt((e.target as HTMLInputElement).value, 10);
+                                                                        const v = Math.max(0, Math.min(maxSent, Number.isFinite(raw) ? raw : 0));
+                                                                        if (v === (item.sent_quantity ?? 0)) return;
+                                                                        setSavingSent(item.id);
+                                                                        try {
+                                                                            await adapter.updateOrderItemSentQuantity(item.id, v);
+                                                                            onOrderUpdated?.();
+                                                                        } finally {
+                                                                            setSavingSent(null);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <span className="text-slate-500 text-xs">/ {maxSent} sent</span>
+                                                            </div>
+                                                        </td>
+                                                    )}
                                                     <td className="px-3 py-2">
                                                         <span className={`text-xs px-1.5 py-0.5 rounded ${item.requires_embroidery ? (item.embroidery_status === 'DONE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700') : 'bg-slate-100 text-slate-500'}`}>
                                                             {item.requires_embroidery ? (item.embroidery_status || 'PENDING') : 'NO EMB'}

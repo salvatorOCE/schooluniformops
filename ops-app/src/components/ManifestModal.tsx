@@ -62,7 +62,7 @@ export function ManifestModal({ schoolRun, onClose }: ManifestModalProps) {
                                         <td className="p-3 font-medium">{order.student_name}</td>
                                         <td className="p-3 text-gray-600">{order.order_number}</td>
                                         <td className="p-3 text-gray-600">
-                                            {order.items.map(i => `${i.product_name} (${i.size}) ×${i.quantity}`).join(', ')}
+                                            {order.items.map(i => `${i.product_name} (${i.size})${i.nickname ? ` — ${i.nickname}` : ''} ×${i.quantity}`).join(', ')}
                                         </td>
                                         <td className="p-3 text-center">
                                             <input type="checkbox" className="w-4 h-4" />

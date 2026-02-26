@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
                 'packed': 'Packed',
                 'shipped': 'Shipped',
                 'completed': 'Completed',
+                'partial-order-complete': 'Partial Order Complete',
                 'on-hold': 'On-Hold',
                 'cancelled': 'Cancelled',
                 'refunded': 'Refunded',
@@ -206,11 +207,19 @@ export async function POST(req: NextRequest) {
                             if (prod) productId = prod.id;
                         }
 
-                        // Extract size if possible from metadata
+                        // Extract size and nickname from line item meta_data
                         let size = null;
-                        if (item.meta_data) {
-                            const sizeMeta = item.meta_data.find((m: any) => m.key.toLowerCase().includes('size') || m.key === 'pa_size');
-                            if (sizeMeta) size = sizeMeta.value;
+                        let nickname: string | null = null;
+                        if (item.meta_data && Array.isArray(item.meta_data)) {
+                            for (const m of item.meta_data) {
+                                const k = (m.key || m.display_key || '').toString();
+                                const v = (m.value ?? m.display_value ?? '').toString().trim();
+                                if (k === 'pa_size' || k.toLowerCase().includes('size')) {
+                                    if (v) size = v;
+                                } else if (k === 'Nickname' || k === 'pa_nickname' || k.toLowerCase() === 'nickname') {
+                                    if (v) nickname = v;
+                                }
+                            }
                         }
 
                         itemsToInsert.push({
@@ -220,6 +229,7 @@ export async function POST(req: NextRequest) {
                             sku: item.sku || `WOO-${item.product_id || 'UNKNOWN'}`,
                             quantity: item.quantity || 1,
                             size: size,
+                            nickname: nickname,
                             unit_price: parseFloat(item.price) || 0,
                             total_price: parseFloat(item.total) || 0,
                         });

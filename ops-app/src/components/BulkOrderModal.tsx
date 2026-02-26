@@ -142,9 +142,37 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
         if (index >= 0) setPartialDelivery(prev => prev.filter((_, i) => i !== index));
     };
 
+    /** Match a parsed product name/sku to a school product; returns price, sku, productId when found. */
+    const matchProduct = (productName: string, sku?: string): { id: string; name: string; sku: string; price: number } | null => {
+        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+        const nameNorm = norm(productName);
+        if (!nameNorm && !sku) return null;
+        // Prefer exact SKU match (item code = what we charge / order from manufacturer)
+        if (sku && products.length) {
+            const bySku = products.find(p => norm(p.sku) === norm(sku));
+            if (bySku) return { id: bySku.id, name: bySku.name, sku: bySku.sku, price: bySku.price };
+        }
+        // Else match by product name (flexible: contains or equals)
+        for (const p of products) {
+            const pNorm = norm(p.name);
+            if (pNorm && (pNorm === nameNorm || pNorm.includes(nameNorm) || nameNorm.includes(pNorm)))
+                return { id: p.id, name: p.name, sku: p.sku, price: p.price };
+        }
+        return null;
+    };
+
     const handleParseEmail = async () => {
         const text = pastedEmail.trim();
         if (!text) return;
+        // Require school so we can fill charge prices from that school's products (EDPS, FLAX, etc.)
+        if (!schoolId && !isAddingSchool) {
+            setParseError('Please select a school first so we can fill in prices and item codes.');
+            return;
+        }
+        if (isAddingSchool) {
+            setParseError('Save the new school first, then paste the email and parse. Or select an existing school to auto-fill prices.');
+            return;
+        }
         setParsing(true);
         setParseError(null);
         try {
@@ -172,15 +200,20 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
             }
             type ParsedItem = { productName?: string; size?: string; quantity?: number; sku?: string; price?: number };
             const rawItems = (data.items || []) as ParsedItem[];
-            const parsed = rawItems.map((item, i) => ({
-                id: `parsed-${Date.now()}-${i}`,
-                productId: '',
-                productName: String(item.productName ?? ''),
-                sku: String(item.sku ?? ''),
-                size: String(item.size ?? ''),
-                quantity: Number(item.quantity) || 1,
-                price: (Number(item.price) ?? 0) || 0,
-            }));
+            const parsed = rawItems.map((item, i) => {
+                const productName = String(item.productName ?? '');
+                const parsedSku = item.sku ? String(item.sku) : '';
+                const matched = matchProduct(productName, parsedSku || undefined);
+                return {
+                    id: `parsed-${Date.now()}-${i}`,
+                    productId: matched?.id ?? '',
+                    productName: matched?.name ?? productName,
+                    sku: matched?.sku ?? parsedSku,
+                    size: String(item.size ?? ''),
+                    quantity: Number(item.quantity) || 1,
+                    price: matched?.price ?? (Number(item.price) || 0),
+                };
+            });
             setItems(parsed);
             setPartialDelivery(parsed.map(() => 0));
             if (data.customerName != null && String(data.customerName).trim()) setCustomerName(String(data.customerName).trim());
@@ -210,13 +243,14 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
             const delivered = items.map((item, i) =>
                 Math.min(Math.max(0, partialDelivery[i] ?? 0), Number.isFinite(item.quantity) ? item.quantity : 0)
             );
+            const isPartialStatus = orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete';
             const orderDetails = {
                 orderNumber,
                 customerName,
                 studentName,
                 status: orderStatus,
                 requestedAt: requestedDate || undefined,
-                partialDelivery: orderStatus === 'Partial Completion' ? delivered : []
+                partialDelivery: isPartialStatus ? delivered : []
             };
             if (orderId) {
                 await adapter.updateBulkOrder(orderId, finalSchoolId, orderDetails, items);
@@ -274,6 +308,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                                 <option value="Processing">Processing</option>
                                 <option value="In Production">In Production</option>
                                 <option value="Partial Completion">Partial Completion</option>
+                                <option value="Partial Order Complete">Partial Order Complete</option>
                                 <option value="Completed">Completed</option>
                             </select>
                         </div>
@@ -375,7 +410,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                                 <Mail className="w-4 h-4 text-slate-500" />
                                 <label className="block text-sm font-medium text-slate-700">Paste email order</label>
                             </div>
-                            <p className="text-xs text-slate-500 mb-2">Paste the order from an email and AI will fill in the line items. You can edit them below before saving.</p>
+                            <p className="text-xs text-slate-500 mb-2">Select the school above first so prices and item codes (e.g. EDPS, FLAX) are filled from that school&apos;s catalogue. Paste the order email and AI will fill line items and charge prices.</p>
                             <textarea
                                 placeholder="Paste email or order text here..."
                                 className="w-full border border-slate-200 rounded-lg p-3 text-sm min-h-[100px] resize-y"
@@ -489,9 +524,9 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                                                     onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
                                                 />
                                             </div>
-                                            {orderStatus === 'Partial Completion' && (
+                                            {(orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete') && (
                                                 <div className="w-20">
-                                                    <label className="block text-xs text-slate-500 mb-1">Delivered</label>
+                                                    <label className="block text-xs text-slate-500 mb-1">Sent</label>
                                                     <input
                                                         type="number"
                                                         min={0}

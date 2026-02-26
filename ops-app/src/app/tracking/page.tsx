@@ -352,6 +352,7 @@ export default function TrackingPage() {
                                     <div key={item.id} className="flex items-center justify-between text-sm py-1.5 px-3 bg-slate-50/50 rounded">
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-700 font-medium">{item.product_name}</span>
+                                            {item.nickname && <span className="text-[10px] font-medium text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded border border-violet-200">{item.nickname}</span>}
                                             {item.size && <span className="text-[10px] font-mono text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-100">Size {item.size}</span>}
                                         </div>
                                         <span className="text-xs text-slate-500">×{item.quantity}</span>
@@ -423,11 +424,18 @@ export default function TrackingPage() {
                                             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Orders on this manifest</div>
                                             <div className="space-y-1.5 max-h-60 overflow-y-auto">
                                                 {m.orders.map((o) => (
-                                                    <div key={o.order_id} className="flex items-center justify-between text-sm py-2 px-3 bg-white rounded border border-slate-100">
-                                                        <span className="font-mono font-medium text-slate-800">{o.order_number}</span>
-                                                        <span className="text-slate-600">{o.student_name || '—'}</span>
-                                                        <span className="text-slate-500 text-xs">{o.item_count} items</span>
-                                                        <span className="text-slate-400 text-xs truncate max-w-[180px]">{o.items_summary}</span>
+                                                    <div key={o.order_id} className="text-sm py-2 px-3 bg-white rounded border border-slate-100 space-y-1">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="font-mono font-medium text-slate-800">{o.order_number}</span>
+                                                            <span className="text-slate-600">{o.student_name || '—'}</span>
+                                                            <span className="text-slate-500 text-xs">{o.item_count} items</span>
+                                                            <span className="text-slate-400 text-xs truncate max-w-[180px]">{o.items_summary}</span>
+                                                        </div>
+                                                        {o.senior_part_not_complete && (
+                                                            <div className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded px-2 py-1">
+                                                                Senior part not complete — senior garments are done bulk on deadline (printing).
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -469,7 +477,7 @@ export default function TrackingPage() {
                                                 <div className="flex flex-wrap gap-2 mt-2">
                                                     {order.items.map((i) => (
                                                         <span key={i.id} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                                                            {i.quantity}× {i.product_name}{i.size ? ` (${i.size})` : ''}
+                                                            {i.quantity}× {i.product_name}{i.size ? ` (${i.size})` : ''}{i.nickname ? ` — ${i.nickname}` : ''}
                                                         </span>
                                                     ))}
                                                 </div>

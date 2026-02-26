@@ -142,7 +142,7 @@ export default function SchoolBulkPage() {
                                             order.order_status === 'Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                             order.order_status === 'Processing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                             order.order_status === 'In Production' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                            order.order_status === 'Partial Completion' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                            order.order_status === 'Partial Completion' || order.order_status === 'Partial Order Complete' ? 'bg-teal-50 text-teal-700 border-teal-200' :
                                             'bg-slate-100 text-slate-700 border-slate-200'
                                         }`}>
                                             {order.order_status}

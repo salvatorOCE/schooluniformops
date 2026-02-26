@@ -63,7 +63,9 @@ export function OrderCard({ order, showAge = true, actions, onClick }: OrderCard
                 {order.items.slice(0, 3).map((item, idx) => (
                     <div key={idx} className="flex justify-between items-center text-xs border-b border-dashed border-slate-100 pb-1 last:border-0 last:pb-0">
                         <span className="text-slate-600 truncate flex-1 pr-2">
-                            {item.product_name} <span className="text-slate-400 font-mono">({item.size})</span>
+                            {item.product_name}
+                            {item.nickname && <span className="text-violet-600 font-medium ml-1">{item.nickname}</span>}
+                            <span className="text-slate-400 font-mono"> ({item.size})</span>
                         </span>
                         <span className="font-bold text-slate-800 bg-slate-100 px-1.5 rounded">x{item.quantity}</span>
                     </div>

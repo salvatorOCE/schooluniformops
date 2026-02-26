@@ -14,6 +14,10 @@ export interface OrderItem {
   requires_embroidery: boolean;
   embroidery_status?: 'PENDING' | 'DONE'; // Track item-level status
   unit_price?: number; // For bulk orders / edit
+  /** Number sent so far (for Partial Order Complete). Undefined/0 = none sent. */
+  sent_quantity?: number;
+  /** Nickname / personalisation for embroidery or print (from WooCommerce senior uniforms). */
+  nickname?: string | null;
   /** Garment reference images from WooCommerce (front/back) */
   image_front_url?: string | null;
   image_back_url?: string | null;
@@ -32,6 +36,63 @@ export interface Product {
   price: number;
   school_id: string;
   sizes: string[];
+}
+
+/** Full product row for All Products list: codes, price (charged), stock, school, manufacturer, etc. */
+export interface ProductListRow {
+  id: string;
+  /** Null for manual products (e.g. Elizabeth Downs) sold outside WooCommerce. */
+  sku: string | null;
+  name: string;
+  category: string | null;
+  /** List/sell price (what we charge) */
+  price: number;
+  requires_embroidery: boolean;
+  school_id: string | null;
+  school_code: string | null;
+  school_name: string | null;
+  attributes: { name?: string; slug?: string; options?: string[] }[] | null;
+  /** Size options from attributes */
+  sizes: string[];
+  stock_on_shelf: Record<string, number>;
+  stock_in_transit: Record<string, number>;
+  woocommerce_id: number | null;
+  /** Manufacturer/supplier name (for purchase orders). */
+  manufacturer_name: string | null;
+  /** Single manufacturer code when product has one code for all sizes. */
+  manufacturer_id: string | null;
+  /** Manufacturer code for kids sizes (when different from adult). */
+  manufacturer_id_kids: string | null;
+  /** Manufacturer code for adult sizes (when different from kids). */
+  manufacturer_id_adult: string | null;
+  /** Manufacturer product name/code (as they refer to it). */
+  manufacturer_product: string | null;
+  /** If true, product is saleable; validation requires manufacturer to be assigned. */
+  is_available_for_sale: boolean;
+  /** Cost for us (landed/cost price). */
+  cost: number | null;
+  /** Total embroidery/print cost per unit. */
+  embroidery_print_cost: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Payload for updating a product. All fields optional; manual products can edit name, sku, school, etc. */
+export interface ProductUpdatePayload {
+  name?: string;
+  sku?: string | null;
+  category?: string | null;
+  price?: number;
+  school_id?: string | null;
+  requires_embroidery?: boolean;
+  manufacturer_name?: string | null;
+  manufacturer_id?: string | null;
+  manufacturer_id_kids?: string | null;
+  manufacturer_id_adult?: string | null;
+  manufacturer_product?: string | null;
+  is_available_for_sale?: boolean;
+  cost?: number | null;
+  embroidery_print_cost?: number | null;
 }
 
 export interface Order {
@@ -88,6 +149,8 @@ export interface SchoolRunGroup {
   order_count: number;
   item_count: number;
   orders: Order[];
+  /** Set by distribution when splitting senior vs non-senior; used for partial vs full completion. */
+  section?: 'NON_SENIOR' | 'SENIOR';
 }
 
 export interface ExceptionOrder extends Order {
@@ -343,6 +406,8 @@ export interface PackOutManifestOrderSummary {
   address_summary?: string | null;
   item_count: number;
   items_summary: string; // e.g. "2x Polo 8, 1x Shorts 10"
+  /** Shown on manifest when this pack is non-senior only; senior garments done bulk on deadline (printing). */
+  senior_part_not_complete?: boolean;
 }
 
 export interface PackOutManifest {

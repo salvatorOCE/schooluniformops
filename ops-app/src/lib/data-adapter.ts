@@ -28,6 +28,10 @@ export interface DataAdapter {
     getOrderById(orderId: string): Promise<Order | null>;
     getSchools(): Promise<import('./types').School[]>;
     getProductsBySchool(schoolId: string): Promise<import('./types').Product[]>;
+    /** All products with full details (codes, cost, charged, stock, school, manufacturer, etc.) */
+    getAllProducts(): Promise<import('./types').ProductListRow[]>;
+    /** Update product (manufacturer, availability, etc.). Does not overwrite SKU. */
+    updateProduct(productId: string, payload: import('./types').ProductUpdatePayload): Promise<void>;
     createSchool(name: string, code: string): Promise<import('./types').School>;
 
     // Write operations
@@ -86,6 +90,8 @@ export interface DataAdapter {
     updateStockInTransit(productId: string, size: string, newAmount: number): Promise<void>;
     getUnprocessedDetails(productId: string, size: string): Promise<import('./types').UnprocessedDetailRow[]>;
     updateOrderItemQuantity(orderItemId: string, quantity: number): Promise<void>;
+    /** Set how many units of this line have been sent (for Partial Order Complete). */
+    updateOrderItemSentQuantity(orderItemId: string, sentQuantity: number): Promise<void>;
 }
 
 // Export the active adapter (mock for now)

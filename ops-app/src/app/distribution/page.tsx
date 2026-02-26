@@ -14,6 +14,7 @@ import { WooSyncBadge } from '@/components/ui/WooSyncBadge';
 
 import { useToast } from '@/lib/toast-context';
 import { buildManifestFromOrders, downloadPackOutManifestPdf } from '@/lib/generate-pack-out-manifest-pdf';
+import { hasNonSeniorItems, hasSeniorItems, orderWithOnlyNonSeniorItems, orderWithOnlySeniorItems } from '@/lib/utils';
 import { Search, X, Package, Truck } from 'lucide-react';
 
 type MainTab = 'PACKING' | 'DISPATCH';
@@ -53,32 +54,39 @@ export default function DistributionPage() {
         return session.school_name.toLowerCase().includes(q) || session.school_code.toLowerCase().includes(q);
     };
 
-    // Orders with (SEN) in order_number are Senior; distribution uses this so (SEN) never appears in non-Senior
-    const isOrderSenior = (o: Order) => !!o.is_senior_order || (typeof o.order_number === 'string' && o.order_number.includes('(SEN)'));
-
-    // Split Processing orders into NON-SENIOR and SENIOR sections (schools that need to be packed out)
+    // Dupe system: orders with BOTH senior and non-senior items appear in BOTH sections (with filtered items per section).
+    // Item-level senior: product name contains senior/year 6/yr 6 (see utils isItemSenior).
     const nonSeniorSessions: SchoolRunGroup[] = packingSessions
         .map(session => {
-            const filtered = session.orders.filter(o => !isOrderSenior(o));
-            if (filtered.length === 0 || !matchesSearch(session)) return null;
+            const ordersWithNonSenior = session.orders
+                .filter(o => o.order_status !== 'Partial Order Complete' && hasNonSeniorItems(o))
+                .map(o => ({
+                    ...orderWithOnlyNonSeniorItems(o),
+                    _alsoHasSeniorItems: hasSeniorItems(o)
+                }));
+            if (ordersWithNonSenior.length === 0 || !matchesSearch(session)) return null;
             return {
                 ...session,
-                orders: filtered,
-                order_count: filtered.length,
-                item_count: filtered.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
+                orders: ordersWithNonSenior,
+                order_count: ordersWithNonSenior.length,
+                item_count: ordersWithNonSenior.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0),
+                section: 'NON_SENIOR' as const
             };
         })
         .filter(Boolean) as SchoolRunGroup[];
 
     const seniorSessions: SchoolRunGroup[] = packingSessions
         .map(session => {
-            const filtered = session.orders.filter(o => isOrderSenior(o));
-            if (filtered.length === 0 || !matchesSearch(session)) return null;
+            const ordersWithSenior = session.orders
+                .filter(o => hasSeniorItems(o))
+                .map(o => orderWithOnlySeniorItems(o));
+            if (ordersWithSenior.length === 0 || !matchesSearch(session)) return null;
             return {
                 ...session,
-                orders: filtered,
-                order_count: filtered.length,
-                item_count: filtered.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
+                orders: ordersWithSenior,
+                order_count: ordersWithSenior.length,
+                item_count: ordersWithSenior.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0),
+                section: 'SENIOR' as const
             };
         })
         .filter(Boolean) as SchoolRunGroup[];
@@ -89,18 +97,23 @@ export default function DistributionPage() {
             const sessions = await adapter.getPackingSessions();
             setPackingSessions(sessions);
 
-            // Refresh active session if open (re-apply same senior/non-senior filter)
+            // Refresh active session if open (re-apply same section filter and item filter)
             if (activeSession) {
                 const rawSession = sessions.find(s => s.school_code === activeSession.school_code);
                 if (rawSession) {
-                    const isSenior = activeSession.orders.some(o => isOrderSenior(o));
-                    const filteredOrders = rawSession.orders.filter(o => isSenior ? isOrderSenior(o) : !isOrderSenior(o));
-                    if (filteredOrders.length > 0) {
+                    const isSeniorSection = activeSession.section === 'SENIOR';
+                    const filtered = isSeniorSection
+                        ? rawSession.orders.filter(hasSeniorItems).map(orderWithOnlySeniorItems)
+                        : rawSession.orders
+                            .filter(o => o.order_status !== 'Partial Order Complete' && hasNonSeniorItems(o))
+                            .map(o => ({ ...orderWithOnlyNonSeniorItems(o), _alsoHasSeniorItems: hasSeniorItems(o) }));
+                    if (filtered.length > 0) {
                         setActiveSession({
                             ...rawSession,
-                            orders: filteredOrders,
-                            order_count: filteredOrders.length,
-                            item_count: filteredOrders.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0)
+                            orders: filtered,
+                            order_count: filtered.length,
+                            item_count: filtered.reduce((sum, o) => sum + o.items.reduce((acc, i) => acc + i.quantity, 0), 0),
+                            section: activeSession.section
                         });
                     } else {
                         setActiveSession(null);
@@ -147,22 +160,34 @@ export default function DistributionPage() {
     const handleFinishPackOut = async (packedOrders: Order[], schoolCode: string, schoolName: string) => {
         if (packedOrders.length === 0) return;
 
+        const isSeniorSection = activeSession?.section === 'SENIOR';
+
         // Build manifest for the completed orders
         const manifest = buildManifestFromOrders(schoolCode, schoolName, packedOrders);
-
-        // Save manifest for Order Tracking
         await adapter.savePackOutManifest(manifest);
 
-        // Mark all packed orders as Shipped / dispatched
         for (const order of packedOrders) {
-            await adapter.dispatchOrder(order.id);
+            // Mark sent_quantity for the items we packed (this session shows only senior or only non-senior items)
+            for (const item of order.items) {
+                await adapter.updateOrderItemSentQuantity(item.id, item.quantity);
+            }
+            const fullOrder = await adapter.getOrderById(order.id);
+            const orderHasSeniorItems = fullOrder ? hasSeniorItems(fullOrder) : false;
+
+            if (isSeniorSection) {
+                await adapter.updateOrderStatus(order.id, 'Completed');
+            } else if (orderHasSeniorItems) {
+                await adapter.updateOrderStatus(order.id, 'Partial Order Complete');
+            } else {
+                // Non-senior only order: full dispatch
+                await adapter.dispatchOrder(order.id);
+            }
         }
 
-        // Store manifest so user can choose to download now or later
         setLastManifest(manifest);
-
-        // Clear session back to packing list and show confirmation
-        toast.success('Completed orders have been changed to shipped.');
+        toast.success(isSeniorSection
+            ? 'Senior pack out completed. Orders marked as Completed.'
+            : 'Pack out completed. Orders marked as Shipped or Partial Order Complete where applicable.');
         handleBackToPackingList();
     };
 
@@ -362,6 +387,7 @@ export default function DistributionPage() {
                                 schoolName={activeSession.school_name}
                                 schoolCode={activeSession.school_code}
                                 orders={activeSession.orders}
+                                isSeniorSection={activeSession.section === 'SENIOR'}
                                 onPack={handleDirectPack}
                                 onBack={handleBackToPackingList}
                                 onReportIssue={setExceptionOrder}

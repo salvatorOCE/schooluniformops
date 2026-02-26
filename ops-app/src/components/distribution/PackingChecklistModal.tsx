@@ -43,7 +43,10 @@ export function PackingChecklistModal({ order, onClose, onConfirmPack }: Packing
                                         onChange={() => toggleItem(item.id)}
                                     />
                                     <div className="flex-1">
-                                        <div className="font-medium text-slate-800">{item.product_name}</div>
+                                        <div className="font-medium text-slate-800">
+                                            {item.product_name}
+                                            {item.nickname && <span className="ml-2 text-xs font-medium text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded border border-violet-200">{item.nickname}</span>}
+                                        </div>
                                         <div className="text-sm text-slate-500">Size: {item.size} • Qty: {item.quantity}</div>
                                     </div>
                                     {item.requires_embroidery && <span className="badge badge-blue ml-2">Embroidery</span>}

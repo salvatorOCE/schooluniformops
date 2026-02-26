@@ -72,7 +72,7 @@ export function PrintLabelModal({ order, onClose }: PrintLabelModalProps) {
                 <p className="text-xs text-gray-500 mb-2">ITEMS</p>
                 {order.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between text-sm">
-                        <span>{item.product_name} ({item.size})</span>
+                        <span>{item.product_name} ({item.size}){item.nickname ? ` — ${item.nickname}` : ''}</span>
                         <span>×{item.quantity}</span>
                     </div>
                 ))}

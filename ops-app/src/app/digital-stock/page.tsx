@@ -276,6 +276,10 @@ export default function DigitalStock() {
     const [newProductSchoolId, setNewProductSchoolId] = useState('');
     const [newProductSizes, setNewProductSizes] = useState('');
     const [newProductEmbroidery, setNewProductEmbroidery] = useState(false);
+    const [newProductManufacturerName, setNewProductManufacturerName] = useState('');
+    const [newProductManufacturerId, setNewProductManufacturerId] = useState('');
+    const [newProductManufacturerIdKids, setNewProductManufacturerIdKids] = useState('');
+    const [newProductManufacturerIdAdult, setNewProductManufacturerIdAdult] = useState('');
     const [addingProduct, setAddingProduct] = useState(false);
 
     // Unprocessed detail modal (where the count comes from; view / edit / clear)
@@ -467,7 +471,7 @@ export default function DigitalStock() {
     };
 
     const handleAddProduct = async () => {
-        if (!supabase || !newProductName || !newProductSku) return;
+        if (!supabase || !newProductName) return;
         setAddingProduct(true);
         try {
             const sizes = newProductSizes
@@ -487,17 +491,21 @@ export default function DigitalStock() {
                 .from('products')
                 .insert({
                     name: newProductName,
-                    sku: newProductSku,
+                    sku: newProductSku.trim() || null,
                     school_id: newProductSchoolId || null,
                     attributes: attributes.length > 0 ? attributes : null,
                     stock_on_shelf: stockInit,
                     stock_in_transit: { ...stockInit },
                     requires_embroidery: newProductEmbroidery,
-                    price: 0
+                    price: 0,
+                    manufacturer_name: newProductManufacturerName.trim() || null,
+                    manufacturer_id: newProductManufacturerId.trim() || null,
+                    manufacturer_id_kids: newProductManufacturerIdKids.trim() || null,
+                    manufacturer_id_adult: newProductManufacturerIdAdult.trim() || null,
                 });
 
             if (error) {
-                showToast('error', error.code === '23505' ? `SKU "${newProductSku}" already exists` : error.message);
+                showToast('error', error.code === '23505' ? (newProductSku.trim() ? `SKU "${newProductSku}" already exists` : 'A product with no SKU may already exist') : error.message);
                 return;
             }
             showToast('success', `Added "${newProductName}"`);
@@ -507,6 +515,10 @@ export default function DigitalStock() {
             setNewProductSchoolId('');
             setNewProductSizes('');
             setNewProductEmbroidery(false);
+            setNewProductManufacturerName('');
+            setNewProductManufacturerId('');
+            setNewProductManufacturerIdKids('');
+            setNewProductManufacturerIdAdult('');
             await loadStock();
         } catch (error) {
             showToast('error', 'Failed to add product');
@@ -1074,12 +1086,12 @@ export default function DigitalStock() {
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">SKU</label>
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">SKU (optional for manual products)</label>
                                 <input
                                     type="text"
                                     value={newProductSku}
                                     onChange={(e) => setNewProductSku(e.target.value)}
-                                    placeholder="e.g. FLAX-POLO-NVY"
+                                    placeholder="Leave blank for sales outside WooCommerce"
                                     className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                             </div>
@@ -1107,6 +1119,41 @@ export default function DigitalStock() {
                                 />
                                 <p className="text-[10px] text-slate-500">Comma-separated. Numeric sizes: even only (4, 6, 8 … 16). Letter sizes (S, M, L, XL) allowed.</p>
                             </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Manufacturer (for garment orders)</label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    <input
+                                        type="text"
+                                        value={newProductManufacturerName}
+                                        onChange={(e) => setNewProductManufacturerName(e.target.value)}
+                                        placeholder="Manufacturer name (e.g. AUSSIE PACIFIC)"
+                                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    />
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <input
+                                            type="text"
+                                            value={newProductManufacturerId}
+                                            onChange={(e) => setNewProductManufacturerId(e.target.value)}
+                                            placeholder="Mfr ID (single)"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={newProductManufacturerIdKids}
+                                            onChange={(e) => setNewProductManufacturerIdKids(e.target.value)}
+                                            placeholder="Kids ID"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={newProductManufacturerIdAdult}
+                                            onChange={(e) => setNewProductManufacturerIdAdult(e.target.value)}
+                                            placeholder="Adult ID"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
@@ -1122,7 +1169,7 @@ export default function DigitalStock() {
                             <button onClick={() => setShowAddProduct(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 shadow-sm transition-colors">Cancel</button>
                             <button
                                 onClick={handleAddProduct}
-                                disabled={addingProduct || !newProductName || !newProductSku}
+                                disabled={addingProduct || !newProductName}
                                 className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 shadow-sm transition-colors"
                             >
                                 {addingProduct ? 'Adding...' : 'Add Product'}

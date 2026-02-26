@@ -26,11 +26,11 @@ export function isValidDigitalStockSize(size: string): boolean {
 export class SupabaseAdapter implements DataAdapter {
     async getPackingSessions(): Promise<SchoolRunGroup[]> {
         if (!supabase) return [];
-        // Fetch all orders in Processing (need to be packed out)
+        // Processing = full pack; Partial Order Complete = non-senior part done, senior part still to pack (shows in Senior section only)
         const { data: orders } = await supabase
             .from('orders')
             .select(`*, schools (code, name), order_items (*)`)
-            .eq('status', 'Processing');
+            .in('status', ['Processing', 'Partial Order Complete']);
 
         // Group by school
         const grouped: Record<string, SchoolRunGroup> = {};
@@ -259,6 +259,100 @@ export class SupabaseAdapter implements DataAdapter {
         }));
     }
 
+    async getAllProducts(): Promise<import('./types').ProductListRow[]> {
+        if (!supabase) return [];
+        const selectWithManufacturer = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, manufacturer_name, manufacturer_id, manufacturer_id_kids, manufacturer_id_adult, manufacturer_product, is_available_for_sale, cost, embroidery_print_cost, created_at, updated_at, schools(code, name)';
+        const selectBase = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, created_at, updated_at, schools(code, name)';
+
+        let data: any[] | null = null;
+        let error: { message?: string; code?: string } | null = null;
+
+        const { data: dataFull, error: errorFull } = await supabase
+            .from('products')
+            .select(selectWithManufacturer)
+            .order('name');
+
+        if (errorFull) {
+            const msg = errorFull.message || '';
+            const code = (errorFull as any).code || '';
+            const missingColumn = code === '42703' || /column.*does not exist|undefined column/i.test(msg);
+            if (missingColumn) {
+                const { data: dataFallback, error: errorFallback } = await supabase
+                    .from('products')
+                    .select(selectBase)
+                    .order('name');
+                if (errorFallback) {
+                    console.error('Failed to get all products:', errorFallback.message || errorFallback);
+                    return [];
+                }
+                data = dataFallback;
+            } else {
+                console.error('Failed to get all products:', msg || code || errorFull);
+                return [];
+            }
+        } else {
+            data = dataFull;
+        }
+
+        return (data || []).map((p: any) => {
+            let sizes: string[] = [];
+            if (p.attributes && Array.isArray(p.attributes)) {
+                const sizeAttr = p.attributes.find((a: any) =>
+                    a?.name?.toLowerCase() === 'size' || a?.slug === 'pa_size' || a?.slug === 'size'
+                );
+                if (sizeAttr && Array.isArray(sizeAttr.options)) sizes = sizeAttr.options;
+            }
+            const school = p.schools as { code?: string; name?: string } | null;
+            return {
+                id: p.id,
+                sku: p.sku ?? null,
+                name: p.name,
+                category: p.category ?? null,
+                price: Number(p.price) || 0,
+                requires_embroidery: Boolean(p.requires_embroidery),
+                school_id: p.school_id ?? null,
+                school_code: school?.code ?? null,
+                school_name: school?.name ?? null,
+                attributes: p.attributes ?? null,
+                sizes,
+                stock_on_shelf: (p.stock_on_shelf && typeof p.stock_on_shelf === 'object') ? p.stock_on_shelf : {},
+                stock_in_transit: (p.stock_in_transit && typeof p.stock_in_transit === 'object') ? p.stock_in_transit : {},
+                woocommerce_id: p.woocommerce_id ?? null,
+                manufacturer_name: p.manufacturer_name ?? null,
+                manufacturer_id: p.manufacturer_id ?? null,
+                manufacturer_id_kids: p.manufacturer_id_kids ?? null,
+                manufacturer_id_adult: p.manufacturer_id_adult ?? null,
+                manufacturer_product: p.manufacturer_product ?? null,
+                is_available_for_sale: p.is_available_for_sale !== false,
+                cost: p.cost != null ? Number(p.cost) : null,
+                embroidery_print_cost: p.embroidery_print_cost != null ? Number(p.embroidery_print_cost) : null,
+                created_at: p.created_at ?? '',
+                updated_at: p.updated_at ?? '',
+            };
+        });
+    }
+
+    async updateProduct(productId: string, payload: import('./types').ProductUpdatePayload): Promise<void> {
+        if (!supabase) return;
+        const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (payload.name !== undefined) update.name = payload.name;
+        if (payload.sku !== undefined) update.sku = payload.sku === '' ? null : payload.sku;
+        if (payload.category !== undefined) update.category = payload.category;
+        if (payload.price !== undefined) update.price = payload.price;
+        if (payload.school_id !== undefined) update.school_id = payload.school_id;
+        if (payload.requires_embroidery !== undefined) update.requires_embroidery = payload.requires_embroidery;
+        if (payload.manufacturer_name !== undefined) update.manufacturer_name = payload.manufacturer_name;
+        if (payload.manufacturer_id !== undefined) update.manufacturer_id = payload.manufacturer_id;
+        if (payload.manufacturer_id_kids !== undefined) update.manufacturer_id_kids = payload.manufacturer_id_kids;
+        if (payload.manufacturer_id_adult !== undefined) update.manufacturer_id_adult = payload.manufacturer_id_adult;
+        if (payload.manufacturer_product !== undefined) update.manufacturer_product = payload.manufacturer_product;
+        if (payload.is_available_for_sale !== undefined) update.is_available_for_sale = payload.is_available_for_sale;
+        if (payload.cost !== undefined) update.cost = payload.cost;
+        if (payload.embroidery_print_cost !== undefined) update.embroidery_print_cost = payload.embroidery_print_cost;
+        const { error } = await supabase.from('products').update(update).eq('id', productId);
+        if (error) throw new Error(error.message);
+    }
+
     // ... (existing helper methods)
 
     private mapToAnalyticsOrder(o: Order): AnalyticsOrderRow {
@@ -466,7 +560,9 @@ export class SupabaseAdapter implements DataAdapter {
                 size: i.size || undefined,
                 requires_embroidery: i.requires_embroidery,
                 embroidery_status: i.embroidery_status === 'DONE' ? 'DONE' : 'PENDING',
-                unit_price: (i as any).unit_price != null ? Number((i as any).unit_price) : undefined
+                unit_price: (i as any).unit_price != null ? Number((i as any).unit_price) : undefined,
+                sent_quantity: (i as any).sent_quantity != null ? Number((i as any).sent_quantity) : 0,
+                nickname: (i as any).nickname ?? undefined
             })),
             created_at: row.created_at,
             paid_at: row.paid_at || row.created_at,
@@ -832,10 +928,13 @@ export class SupabaseAdapter implements DataAdapter {
     async updateOrderStatus(orderId: string, status: string): Promise<void> {
         if (!supabase) return;
 
-        // Check if orderId is a UUID. If not, treat as order_number
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+        const payload: { status: string; dispatched_at?: string } = { status };
+        if (status === 'Partial Order Complete' || status === 'Completed') {
+            payload.dispatched_at = new Date().toISOString();
+        }
 
-        let query = supabase.from('orders').update({ status });
+        let query = supabase.from('orders').update(payload);
 
         if (isUUID) {
             query = query.eq('id', orderId);
@@ -1131,6 +1230,15 @@ export class SupabaseAdapter implements DataAdapter {
             .update({ quantity })
             .eq('id', orderItemId);
         if (error) throw new Error(error.message || 'Failed to update quantity');
+    }
+
+    async updateOrderItemSentQuantity(orderItemId: string, sentQuantity: number): Promise<void> {
+        if (!supabase) throw new Error('Supabase not initialized');
+        const { error } = await supabase
+            .from('order_items')
+            .update({ sent_quantity: Math.max(0, sentQuantity) })
+            .eq('id', orderItemId);
+        if (error) throw new Error(error.message || 'Failed to update sent quantity');
     }
 
     // --- FIX UPS ---

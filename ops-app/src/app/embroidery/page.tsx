@@ -347,6 +347,7 @@ export default function EmbroideryPage() {
                                                         <div key={i.id} className={`flex items-center gap-2 text-sm p-2 rounded transition-colors ${itemDone ? 'bg-transparent text-slate-400' : 'bg-white border border-slate-200'}`}>
                                                             <span className={`font-bold px-1.5 rounded ${itemDone ? 'text-slate-400 bg-slate-100' : 'text-slate-900 bg-slate-100'}`}>{i.quantity}</span>
                                                             <span className={`${itemDone ? 'line-through decoration-slate-400' : 'text-slate-800'}`}>{i.product_name}</span>
+                                                            {i.nickname && <span className="text-xs font-medium text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded border border-violet-200">{i.nickname}</span>}
                                                             {i.size && <span className="text-xs font-mono ml-auto opacity-70">Size {i.size}</span>}
                                                             {itemDone && <CheckCircle className="w-4 h-4 text-slate-400 ml-1" />}
                                                         </div>

@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
             'Packed': 'packed',
             'Shipped': 'shipped',
             'Completed': 'completed',
+            'Partial Order Complete': 'partial-order-complete',
             'On hold': 'on-hold',
             'On-Hold': 'on-hold',
             'Cancelled': 'cancelled',

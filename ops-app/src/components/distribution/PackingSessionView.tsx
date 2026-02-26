@@ -7,6 +7,8 @@ interface PackingSessionViewProps {
     schoolName: string;
     schoolCode: string;
     orders: Order[];
+    /** True when this session is the Senior section (so we don't show "Also in Senior" badge). */
+    isSeniorSection?: boolean;
     onPack: (orderId: string) => void;
     onBack: () => void;
     onReportIssue: (order: Order) => void;
@@ -15,7 +17,7 @@ interface PackingSessionViewProps {
     onFinishPackOut?: (packedOrders: Order[], schoolCode: string, schoolName: string) => void;
 }
 
-export function PackingSessionView({ schoolName, schoolCode, orders, onPack, onBack, onReportIssue, onUpdateOrder, onFinishPackOut }: PackingSessionViewProps) {
+export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSection, onPack, onBack, onReportIssue, onUpdateOrder, onFinishPackOut }: PackingSessionViewProps) {
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const [checkedState, setCheckedState] = useState<Record<string, Record<string, boolean>>>({});
     const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
@@ -147,7 +149,14 @@ export function PackingSessionView({ schoolName, schoolCode, orders, onPack, onB
                                     <div className="flex-1 grid grid-cols-12 gap-4">
                                         <div className="col-span-4">
                                             <div className="font-bold text-slate-800">{order.student_name}</div>
-                                            <div className="text-xs text-slate-500">{order.order_number}</div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-xs text-slate-500">{order.order_number}</span>
+                                                {!isSeniorSection && (order as Order & { _alsoHasSeniorItems?: boolean })._alsoHasSeniorItems && (
+                                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 border border-teal-200" title="Senior items will be packed separately → Partial completion">
+                                                        Also in Senior
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="col-span-6">
@@ -248,6 +257,7 @@ export function PackingSessionView({ schoolName, schoolCode, orders, onPack, onB
                                                                     <div className="flex-1">
                                                                         <div className={`text-sm font-medium ${item.requires_embroidery && item.embroidery_status === 'PENDING' ? 'text-slate-400' : 'text-slate-700'}`}>
                                                                             {item.product_name}
+                                                                            {item.nickname && <span className="ml-1.5 text-xs font-medium text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded border border-violet-200">{item.nickname}</span>}
                                                                         </div>
                                                                         <div className="text-[10px] text-slate-400">{schoolName} • {item.sku}</div>
                                                                     </div>

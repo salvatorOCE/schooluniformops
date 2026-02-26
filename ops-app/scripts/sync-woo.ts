@@ -307,18 +307,27 @@ async function sync() {
         if (!orderData) continue;
 
         // Upsert Items
-        const items = o.line_items.map((i: any) => ({
-            order_id: orderData.id,
-            // product_id: ... // need to map via woo_product_id using productDetailsMap
-            product_id: productDetailsMap.get(i.product_id)?.id || null,
-            sku: i.sku || 'NO-SKU',
-            name: i.name,
-            quantity: i.quantity,
-            unit_price: parseFloat(i.price || '0'),
-            size: i.meta_data.find((m: any) => m.key === 'pa_size' || m.key === 'Size')?.value,
-            requires_embroidery: true,
-            embroidery_status: 'PENDING'
-        }));
+        const items = o.line_items.map((i: any) => {
+            let nickname: string | null = null;
+            if (i.meta_data && Array.isArray(i.meta_data)) {
+                const nickMeta = i.meta_data.find((m: any) =>
+                    m.key === 'Nickname' || m.key === 'pa_nickname' || (m.key && String(m.key).toLowerCase() === 'nickname')
+                );
+                if (nickMeta && (nickMeta.value ?? nickMeta.display_value)) nickname = String(nickMeta.value ?? nickMeta.display_value).trim();
+            }
+            return {
+                order_id: orderData.id,
+                product_id: productDetailsMap.get(i.product_id)?.id || null,
+                sku: i.sku || 'NO-SKU',
+                name: i.name,
+                quantity: i.quantity,
+                unit_price: parseFloat(i.price || '0'),
+                size: i.meta_data?.find((m: any) => m.key === 'pa_size' || m.key === 'Size')?.value,
+                nickname,
+                requires_embroidery: true,
+                embroidery_status: 'PENDING'
+            };
+        });
 
         if (items.length > 0) {
             await supabase.from('order_items').delete().eq('order_id', orderData.id);

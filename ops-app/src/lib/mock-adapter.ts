@@ -1224,6 +1224,10 @@ export class MockAdapter implements DataAdapter {
         console.log('Mock updateOrderItemQuantity (no-op)');
     }
 
+    async updateOrderItemSentQuantity(_orderItemId: string, _sentQuantity: number): Promise<void> {
+        console.log('Mock updateOrderItemSentQuantity (no-op)');
+    }
+
     async getSchools(): Promise<import('./types').School[]> {
         return [
             { id: 'STMARY', code: 'STMARY', name: "St Mary's College" },
@@ -1254,6 +1258,19 @@ export class MockAdapter implements DataAdapter {
             school_id: schoolId,
             sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] // Mock sizes
         }));
+    }
+
+    async getAllProducts(): Promise<import('./types').ProductListRow[]> {
+        const rows: import('./types').ProductListRow[] = [
+            { id: 'prod-1', sku: 'POLO-NVY', name: 'Polo Shirt', category: "St Mary's", price: 35, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: [{ name: 'Size', options: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] }], sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1001, manufacturer_name: 'AUSSIE PACIFIC', manufacturer_id: null, manufacturer_id_kids: '3307', manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: true, cost: 18, embroidery_print_cost: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-2', sku: 'DRESS-NVY', name: 'Dress', category: "St Mary's", price: 65, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1002, manufacturer_name: null, manufacturer_id: null, manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: false, cost: null, embroidery_print_cost: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-3', sku: 'POLO-TEAL', name: 'Polo Shirt', category: 'Flaxmill', price: 35, requires_embroidery: true, school_id: 'FLAXMILL', school_code: 'FLAXMILL', school_name: 'Flaxmill School', attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1003, manufacturer_name: 'WinningSpirit', manufacturer_id: 'FL02', manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: 'Half Zip Fleece', is_available_for_sale: true, cost: 22, embroidery_print_cost: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+        ];
+        return rows;
+    }
+
+    async updateProduct(_productId: string, _payload: import('./types').ProductUpdatePayload): Promise<void> {
+        console.log('Mock updateProduct', _productId, _payload);
     }
 
     async getBulkOrders(): Promise<Order[]> {

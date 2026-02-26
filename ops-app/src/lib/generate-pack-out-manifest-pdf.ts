@@ -35,6 +35,8 @@ export function buildManifestFromOrders(
       address_summary = parts.join(', ');
     }
 
+    const seniorPartNotComplete = !!(o as Order & { _alsoHasSeniorItems?: boolean })._alsoHasSeniorItems;
+
     return {
       order_id: o.id,
       order_number: o.order_number,
@@ -44,6 +46,7 @@ export function buildManifestFromOrders(
       address_summary,
       item_count: o.items.reduce((s, i) => s + i.quantity, 0),
       items_summary: summary.length > 80 ? summary.slice(0, 80) + '…' : summary,
+      senior_part_not_complete: seniorPartNotComplete || undefined,
     };
   });
   return {
@@ -139,8 +142,12 @@ export function downloadPackOutManifestPdf(manifest: PackOutManifest, filename?:
       const maxContentsWidth = pageWidth - rightMargin - colX[3];
       const contentsLines = doc.splitTextToSize(contentsText, maxContentsWidth);
       const contactLines = contactText ? doc.splitTextToSize(contactText, pageWidth - rightMargin - colX[1]) : [];
+      const seniorNoteLines = row.senior_part_not_complete
+        ? doc.splitTextToSize('Senior part not complete — senior garments are done bulk on deadline (printing).', pageWidth - rightMargin - colX[1])
+        : [];
 
-      const rowLines = Math.max(1, contentsLines.length) + (contactLines.length > 0 ? contactLines.length + 1 : 0);
+      let rowLines = Math.max(1, contentsLines.length) + (contactLines.length > 0 ? contactLines.length + 1 : 0);
+      if (seniorNoteLines.length > 0) rowLines += 2 + seniorNoteLines.length; // gap + note
       const neededHeight = rowLines * lineHeight + 2;
 
       if (y + neededHeight > 270) {
@@ -165,6 +172,15 @@ export function downloadPackOutManifestPdf(manifest: PackOutManifest, filename?:
         doc.text(contactLines, colX[1], currentY);
         doc.setTextColor(0, 0, 0);
         currentY += contactLines.length * lineHeight;
+      }
+
+      if (row.senior_part_not_complete) {
+        currentY += 2;
+        doc.setFontSize(8);
+        doc.setTextColor(0, 100, 100);
+        doc.text(seniorNoteLines, colX[1], currentY);
+        doc.setTextColor(0, 0, 0);
+        currentY += seniorNoteLines.length * lineHeight;
       }
 
       y = currentY + 2;

@@ -1,4 +1,48 @@
-import { OrderStatus } from './types';
+import { OrderStatus, OrderItem, Order } from './types';
+
+/** Heuristic: item is senior if product name contains senior/year 6/yr 6 (matches Woo split logic). */
+export function isItemSenior(item: OrderItem): boolean {
+    const name = (item.product_name || '').toLowerCase();
+    return ['senior', 'year 6', 'yr 6', 'leaver'].some(kw => name.includes(kw));
+}
+
+export function getNonSeniorItems(order: Order): OrderItem[] {
+    return order.items.filter(i => !isItemSenior(i));
+}
+
+export function getSeniorItems(order: Order): OrderItem[] {
+    return order.items.filter(i => isItemSenior(i));
+}
+
+export function hasSeniorItems(order: Order): boolean {
+    return order.items.some(i => isItemSenior(i));
+}
+
+export function hasNonSeniorItems(order: Order): boolean {
+    return order.items.some(i => !isItemSenior(i));
+}
+
+/** Order with only non-senior items (for display in Non-Senior section). */
+export function orderWithOnlyNonSeniorItems(order: Order): Order {
+    const items = getNonSeniorItems(order);
+    if (items.length === 0) return order;
+    return {
+        ...order,
+        items,
+        is_senior_order: false,
+    };
+}
+
+/** Order with only senior items (for display in Senior section). */
+export function orderWithOnlySeniorItems(order: Order): Order {
+    const items = getSeniorItems(order);
+    if (items.length === 0) return order;
+    return {
+        ...order,
+        items,
+        is_senior_order: true,
+    };
+}
 
 export function getStatusLabel(status: string): string {
     return status || 'Unknown';
@@ -14,6 +58,7 @@ export function getStatusColor(status: string): string {
     if (s.includes('cancelled')) return 'bg-red-100 text-red-700 border-red-200';
     if (s.includes('failed')) return 'bg-red-100 text-red-700 border-red-200';
     if (s.includes('on-hold')) return 'bg-red-100 text-red-700 border-red-200';
+    if (s.includes('partial order complete') || s.includes('partial completion')) return 'bg-teal-100 text-teal-700 border-teal-200';
 
     return 'bg-slate-50 text-slate-500 border-slate-100';
 }
