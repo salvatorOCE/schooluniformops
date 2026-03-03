@@ -75,12 +75,27 @@ export async function POST(request: Request) {
         const orderDateCreated = order.date_created_gmt || order.date_created;
         const orderDatePaid = order.date_paid_gmt || order.date_paid || null;
 
+        // Order number: plugin may store "191" or "SUS-0191" in meta; API often has order.number = post ID
+        let rawNum = order.number != null ? String(order.number).trim() : '';
+        if (!rawNum || rawNum === String(order.id)) {
+            const meta = (order.meta_data || []) as Array<{ key?: string; value?: string }>;
+            for (const m of meta) {
+                const k = (m.key || '').toLowerCase();
+                const v = m.value != null ? String(m.value).trim() : '';
+                if (v && (k === '_order_number' || k === '_wc_order_number' || k === 'order_number' || k === '_sequential_order_number')) {
+                    rawNum = v;
+                    break;
+                }
+            }
+        }
+        const orderNumber = /^\d+$/.test(rawNum) ? `SUS ${rawNum}` : (rawNum || `SUS ${order.id}`);
+
         // 2. Upsert Order
         const { data: upsertedOrder, error: orderError } = await supabaseAdmin
             .from('orders')
             .upsert({
                 woo_order_id: order.id,
-                order_number: order.number,
+                order_number: orderNumber,
                 status: status,
                 school_id: schoolId,
                 delivery_method: deliveryType,
@@ -113,16 +128,16 @@ export async function POST(request: Request) {
                     if (prod) productId = prod.id;
                 }
 
-                // Extract size and nickname from line item meta_data
+                // Extract size and nickname from line item meta_data (WooCommerce can use key, display_key, value, display_value)
                 let size = null;
                 let nickname: string | null = null;
                 if (item.meta_data && Array.isArray(item.meta_data)) {
                     for (const m of item.meta_data) {
-                        const k = (m.key || m.display_key || '').toString();
+                        const k = (m.key ?? m.display_key ?? '').toString().trim();
                         const v = (m.value ?? m.display_value ?? '').toString().trim();
                         if (k === 'pa_size' || k.toLowerCase().includes('size')) {
                             if (v) size = v;
-                        } else if (k === 'Nickname' || k === 'pa_nickname' || k.toLowerCase() === 'nickname') {
+                        } else if (k.toLowerCase().includes('nickname')) {
                             if (v) nickname = v;
                         }
                     }

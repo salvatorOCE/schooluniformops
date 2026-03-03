@@ -1,14 +1,24 @@
 'use client';
 
 import { OrderHistoryRecord } from '@/lib/types';
-import { X, User, ShoppingBag, Truck, ImageIcon, Calendar, CreditCard, MapPin, FileText, Mail, Phone } from 'lucide-react';
+import { X, User, ShoppingBag, Truck, ImageIcon, Calendar, CreditCard, MapPin, FileText, Mail, Phone, MessageSquare, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { OrderTimeline } from './OrderTimeline';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
 import { useData } from '@/lib/data-provider';
 import { useToast } from '@/lib/toast-context';
+import { useHistory } from '@/lib/history-context';
+import { useSession } from '@/lib/session-context';
 import { SystemEvent } from '@/lib/types';
 import { useEffect, useState } from 'react';
+
+interface OrderNote {
+  id: string;
+  author_role: string;
+  author_display: string | null;
+  content: string;
+  created_at: string;
+}
 
 /** WooCommerce order shape (subset we use) */
 interface WooOrder {
@@ -63,6 +73,8 @@ interface WooOrder {
 interface HistoryDetailDrawerProps {
     order: OrderHistoryRecord | null;
     onClose: () => void;
+    /** Called when a note is added (e.g. to refresh list for badge) */
+    onNoteAdded?: () => void;
 }
 
 function formatAddress(addr: WooOrder['billing'] | WooOrder['shipping'] | undefined): string {
@@ -78,24 +90,32 @@ function formatAddress(addr: WooOrder['billing'] | WooOrder['shipping'] | undefi
     return parts.join(', ') || '—';
 }
 
-export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps) {
+export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDetailDrawerProps) {
     const adapter = useData();
     const { toast } = useToast();
+    const { refresh } = useHistory();
+    const { role } = useSession();
     const [events, setEvents] = useState<SystemEvent[]>([]);
     const [isUpdating, setIsUpdating] = useState(false);
     const [currentStatus, setCurrentStatus] = useState(order?.status || '');
     const [itemImages, setItemImages] = useState<Record<string, { front: string | null; back: string | null }>>({});
     const [wooOrder, setWooOrder] = useState<WooOrder | null>(null);
     const [wooLoading, setWooLoading] = useState(false);
+    const [notes, setNotes] = useState<OrderNote[]>([]);
+    const [notesLoading, setNotesLoading] = useState(false);
+    const [newNote, setNewNote] = useState('');
+    const [savingNote, setSavingNote] = useState(false);
 
     useEffect(() => {
         if (order) {
             setCurrentStatus(order.status);
             setWooOrder(null);
             adapter.getSystemEvents(order.orderId).then(setEvents);
-            if (order.id) {
+            // Use order.id (Supabase UUID) or fallback to orderId (order number e.g. SUS-0183) – APIs resolve both
+            const orderKey = order.id || order.orderId;
+            if (orderKey) {
                 setWooLoading(true);
-                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(order.id)}`)
+                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`)
                     .then((res) => (res.ok ? res.json() : null))
                     .then((data: WooOrder | null) => {
                         setWooOrder(data || null);
@@ -103,7 +123,7 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
                     .catch(() => setWooOrder(null))
                     .finally(() => setWooLoading(false));
 
-                fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(order.id)}`)
+                fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(orderKey)}`)
                     .then((res) => res.ok ? res.json() : { items: [] })
                     .then((data: { items?: { order_item_id: string; image_front_url: string | null; image_back_url: string | null }[] }) => {
                         const map: Record<string, { front: string | null; back: string | null }> = {};
@@ -116,9 +136,19 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
                         setItemImages(map);
                     })
                     .catch(() => setItemImages({}));
+
+                setNotesLoading(true);
+                fetch(`/api/orders/${encodeURIComponent(orderKey)}/notes`)
+                    .then((res) => (res.ok ? res.json() : { notes: [] }))
+                    .then((data: { notes?: OrderNote[] }) => setNotes(data.notes || []))
+                    .catch(() => setNotes([]))
+                    .finally(() => setNotesLoading(false));
             } else {
                 setItemImages({});
+                setNotes([]);
             }
+        } else {
+            setNotes([]);
         }
     }, [order, adapter]);
 
@@ -141,6 +171,35 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
             e.target.value = currentStatus;
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    const handleAddNote = async () => {
+        const content = newNote.trim();
+        if (!content || !order) return;
+        const orderKey = order.id || order.orderId;
+        if (!orderKey) return;
+        setSavingNote(true);
+        try {
+            const res = await fetch(`/api/orders/${encodeURIComponent(orderKey)}/notes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to add note');
+            }
+            const { note } = await res.json();
+            setNotes((prev) => [note, ...prev]);
+            setNewNote('');
+            toast.success('Note added');
+            await refresh();
+            onNoteAdded?.();
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to add note');
+        } finally {
+            setSavingNote(false);
         }
     };
 
@@ -355,6 +414,55 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
                         </section>
                     )}
 
+                    {/* Order Notes (admin/school) */}
+                    <section>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4" /> Order notes
+                        </h3>
+                        {notesLoading ? (
+                            <p className="text-slate-500 text-sm">Loading notes…</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {notes.length === 0 ? (
+                                    <p className="text-slate-500 text-sm">No notes yet. Add one below.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {notes.map((n) => (
+                                            <div key={n.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${n.author_role === 'admin' ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                        {n.author_display || n.author_role}
+                                                    </span>
+                                                    <span className="text-slate-400 text-xs">{format(new Date(n.created_at), 'd MMM yyyy, HH:mm')}</span>
+                                                </div>
+                                                <p className="text-slate-700 whitespace-pre-wrap">{n.content}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {role && (
+                                    <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                                        <textarea
+                                            value={newNote}
+                                            onChange={(e) => setNewNote(e.target.value)}
+                                            placeholder="Add a note for this order…"
+                                            rows={2}
+                                            className="w-full text-sm border border-slate-200 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 resize-none"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddNote}
+                                            disabled={!newNote.trim() || savingNote}
+                                            className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-slate-900 text-white rounded hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {savingNote ? 'Saving…' : <><Send className="w-3.5 h-3.5" /> Add note</>}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+
                     {/* Audit Log */}
                     <section>
                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Audit log</h3>
@@ -364,7 +472,6 @@ export function HistoryDetailDrawer({ order, onClose }: HistoryDetailDrawerProps
 
                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
                     <button className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Print label</button>
-                    <button className="px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded hover:bg-slate-800 shadow-sm">Add note</button>
                 </div>
             </div>
         </div>

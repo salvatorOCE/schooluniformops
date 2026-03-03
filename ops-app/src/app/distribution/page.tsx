@@ -124,13 +124,15 @@ export default function DistributionPage() {
             }
         } else {
             // Load Dispatch Data
-            const schoolData = await adapter.getSchoolRuns(); // Shipped (awaiting confirmation) school runs
-            setDispatchSchoolRuns(schoolData.filter(g => g.orders.some(o => o.order_status === 'Shipped')));
+            // Schools: runs where orders are Packed and ready to leave the warehouse
+            const schoolData = await adapter.getSchoolRuns();
+            setDispatchSchoolRuns(schoolData);
 
-            const homeData = await adapter.getDistributionQueue('HOME', ['PACKED']);
+            // Home / Store: individual orders that are Packed
+            const homeData = await adapter.getDistributionQueue('HOME', ['Packed']);
             setDispatchHomeOrders(homeData);
 
-            const storeData = await adapter.getDistributionQueue('STORE', ['PACKED']);
+            const storeData = await adapter.getDistributionQueue('STORE', ['Packed']);
             setDispatchStoreOrders(storeData);
         }
         setLoading(false);
@@ -171,23 +173,16 @@ export default function DistributionPage() {
             for (const item of order.items) {
                 await adapter.updateOrderItemSentQuantity(item.id, item.quantity);
             }
-            const fullOrder = await adapter.getOrderById(order.id);
-            const orderHasSeniorItems = fullOrder ? hasSeniorItems(fullOrder) : false;
 
-            if (isSeniorSection) {
-                await adapter.updateOrderStatus(order.id, 'Completed');
-            } else if (orderHasSeniorItems) {
-                await adapter.updateOrderStatus(order.id, 'Partial Order Complete');
-            } else {
-                // Non-senior only order: full dispatch
-                await adapter.dispatchOrder(order.id);
-            }
+            // After pack out, move all orders to Packed so they appear
+            // in the Dispatch tab (Schools) ready to ship.
+            await adapter.updateOrderStatus(order.id, 'Packed');
         }
 
         setLastManifest(manifest);
         toast.success(isSeniorSection
-            ? 'Senior pack out completed. Orders marked as Completed.'
-            : 'Pack out completed. Orders marked as Shipped or Partial Order Complete where applicable.');
+            ? 'Senior pack out completed. Orders marked as Packed and moved to Dispatch.'
+            : 'Pack out completed. Orders marked as Packed and moved to Dispatch.');
         handleBackToPackingList();
     };
 
@@ -199,11 +194,11 @@ export default function DistributionPage() {
     // Dispatch Handlers
     const handleDispatchRun = (schoolCode: string) => {
         setConfirmAction({
-            title: 'Order Delivered and complete',
-            message: 'Mark all shipped orders in this school run as Completed?',
+            title: 'Successfully Shipped',
+            message: 'Mark all packed orders in this school run as Shipped?',
             action: async () => {
                 await adapter.dispatchSchoolRun(schoolCode);
-                toast.success('School run marked as Completed.');
+                toast.success('School run marked as Shipped.');
                 loadData();
             }
         });
@@ -393,6 +388,7 @@ export default function DistributionPage() {
                                 onReportIssue={setExceptionOrder}
                                 onUpdateOrder={handleUpdateOrder}
                                 onFinishPackOut={handleFinishPackOut}
+                                onRefresh={loadData}
                             />
                         )}
                     </>

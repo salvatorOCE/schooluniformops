@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Order, FixUpType, FixUpRequest } from '@/lib/types';
 import { useData } from '@/lib/data-provider';
+import { EventLogger } from '@/lib/event-logger';
 import { RefreshCw, Scissors, AlertTriangle, User, PackageX, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface FixUpCreationModalProps {
@@ -56,12 +57,28 @@ export function FixUpCreationModal({ order, onClose, onSuccess }: FixUpCreationM
                 original_order_id: order.id,
                 original_order_number: order.order_number,
                 student_name: order.student_name || 'Unknown',
+                parent_name: order.parent_name,
                 school_name: order.school_name,
                 type: issueType,
                 status: 'OPEN',
                 priority: 'HIGH', // Default to High for all fix-ups
                 items: fixUpItems as any,
                 notes: notes
+            });
+            await EventLogger.log(order.id, 'FIX_UP', 'CREATED', 'USER', {
+                newState: {
+                    status: 'OPEN',
+                    type: issueType,
+                    notes,
+                },
+                metadata: {
+                    originalOrder: order.order_number,
+                    schoolName: order.school_name,
+                    schoolCode: order.school_code,
+                    parentName: order.parent_name,
+                    studentName: order.student_name,
+                    source: 'RecoveryCenterCreate'
+                }
             });
             onSuccess();
             onClose();

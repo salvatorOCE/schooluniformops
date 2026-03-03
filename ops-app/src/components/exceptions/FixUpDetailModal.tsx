@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FixUpRequest, FixUpStatus } from '@/lib/types';
+import { EventLogger } from '@/lib/event-logger';
 import { useData } from '@/lib/data-provider';
 import { useToast } from '@/lib/toast-context';
 import {
@@ -51,7 +52,8 @@ const STATUS_OPTIONS: { value: FixUpStatus; label: string }[] = [
     { value: 'WAITING_STOCK', label: 'Ordering Stock' },
     { value: 'IN_PRODUCTION', label: 'In Production' },
     { value: 'PACKED', label: 'Packed' },
-    { value: 'DISPATCHED', label: 'Completed' },
+    { value: 'DISPATCHED', label: 'Dispatched' },
+    { value: 'SHIPPED', label: 'Shipped' },
     { value: 'CLOSED', label: 'Closed' },
 ];
 
@@ -82,7 +84,20 @@ export function FixUpDetailModal({ fixUp, onClose, onSave }: FixUpDetailModalPro
         if (!hasChanges) return;
         setSaving(true);
         try {
+            const prevNotes = fixUp.notes || '';
+            const prevStatus = fixUp.status;
             await adapter.updateFixUp(fixUp.id, { notes, status });
+            await EventLogger.log(fixUp.id, 'FIX_UP', 'STATUS_CHANGE', 'USER', {
+                prevState: { status: prevStatus, notes: prevNotes },
+                newState: { status, notes },
+                metadata: {
+                    originalOrder: fixUp.original_order_number,
+                    parentName: fixUp.parent_name ?? fixUp.student_name,
+                    schoolName: fixUp.school_name,
+                    schoolCode: (fixUp as any).school_code,
+                    source: 'RecoveryCenterDetail'
+                }
+            });
             toast.success('Fix-up updated');
             onSave();
             onClose();

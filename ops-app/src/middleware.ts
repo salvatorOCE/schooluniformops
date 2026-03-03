@@ -6,8 +6,12 @@ const COOKIE_NAME = 'ops_session';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow login page and auth API
-  if (pathname === '/login' || pathname.startsWith('/api/auth/')) {
+  // Allow login page, auth API, and WooCommerce webhooks (no session)
+  if (
+    pathname === '/login' ||
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/webhooks/')
+  ) {
     return NextResponse.next();
   }
 
@@ -21,13 +25,32 @@ export function middleware(request: NextRequest) {
   }
 
   const session = request.cookies.get(COOKIE_NAME)?.value;
-  if (session) {
+
+  // Allow API routes for authenticated users (school users need order-details, product-images, etc.)
+  if (pathname.startsWith('/api/') && session) {
     return NextResponse.next();
   }
 
-  const loginUrl = new URL('/login', request.url);
-  loginUrl.searchParams.set('from', pathname);
-  return NextResponse.redirect(loginUrl);
+  // School users (non-admin): only allow Orders, Recovery Center, Product list
+  const schoolAllowed = ['/orders', '/exceptions', '/products'];
+  if (session?.startsWith('school:')) {
+    if (pathname === '/' || pathname === '/school-portal') {
+      return NextResponse.redirect(new URL('/orders', request.url));
+    }
+    if (schoolAllowed.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+      return NextResponse.next();
+    }
+    return NextResponse.redirect(new URL('/orders', request.url));
+  }
+
+  // No session: redirect to login
+  if (!session || (session !== 'ok' && session !== 'admin')) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('from', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {

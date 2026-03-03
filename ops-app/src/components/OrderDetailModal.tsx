@@ -2,7 +2,7 @@
 
 import { Order, OrderStatus, SystemEvent } from '@/lib/types';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
-import { X, User, ShoppingBag, Truck, ImageIcon } from 'lucide-react';
+import { X, User, ShoppingBag, Truck, ImageIcon, RefreshCw } from 'lucide-react';
 import { OrderTimeline } from '@/components/history/OrderTimeline';
 import { useData } from '@/lib/data-provider';
 import { useEffect, useState } from 'react';
@@ -22,8 +22,25 @@ export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: Ord
     /** Per-item sent quantity (for Partial Order Complete). Key = item.id. */
     const [sentQuantities, setSentQuantities] = useState<Record<string, number>>({});
     const [savingSent, setSavingSent] = useState<string | null>(null);
+    const [savingStatus, setSavingStatus] = useState(false);
+    const [resyncing, setResyncing] = useState(false);
 
     const isPartialOrderComplete = order?.order_status === 'Partial Order Complete';
+
+    const ORDER_STATUS_OPTIONS = [
+        'Pending Payment',
+        'Processing',
+        'On-Hold',
+        'Embroidery',
+        'Distribution',
+        'Packed',
+        'Shipped',
+        'Partial Order Complete',
+        'Completed',
+        'Cancelled',
+        'Refunded',
+        'Failed',
+    ];
 
     useEffect(() => {
         if (order?.items) {
@@ -72,11 +89,28 @@ export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: Ord
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
                     <div>
-                        <div className="flex items-center gap-3 mb-1">
+                        <div className="flex items-center gap-3 mb-1 flex-wrap">
                             <h2 className="text-xl font-bold text-slate-900">{order.order_number}</h2>
-                            <span className={`px-2.5 py-0.5 text-xs font-bold rounded border ${getStatusColor(order.order_status)}`}>
-                                {getStatusLabel(order.order_status)}
-                            </span>
+                            <select
+                                value={order.order_status || ''}
+                                disabled={savingStatus}
+                                onChange={async (e) => {
+                                    const newStatus = e.target.value;
+                                    if (newStatus === (order.order_status || '')) return;
+                                    setSavingStatus(true);
+                                    try {
+                                        await adapter.updateOrderStatus(order.id, newStatus);
+                                        onOrderUpdated?.();
+                                    } finally {
+                                        setSavingStatus(false);
+                                    }
+                                }}
+                                className={`text-xs font-bold rounded border px-2.5 py-0.5 min-w-[140px] bg-white cursor-pointer disabled:opacity-60 ${getStatusColor(order.order_status)}`}
+                            >
+                                {ORDER_STATUS_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>{getStatusLabel(s)}</option>
+                                ))}
+                            </select>
                         </div>
                         <div className="text-sm text-slate-500 flex items-center gap-4">
                             <span className="flex items-center gap-1"><User className="w-3 h-3" /> {order.student_name}</span>
@@ -111,7 +145,40 @@ export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: Ord
 
                     {/* Items Section */}
                     <section>
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Order Items</h3>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Order Items</h3>
+                            {order.items.length === 0 && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setResyncing(true);
+                                        try {
+                                            const res = await fetch('/api/woo/pull-sync', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ orderNumber: order.order_number })
+                                            });
+                                            const data = await res.json().catch(() => ({}));
+                                            if (data.success) {
+                                                onOrderUpdated?.();
+                                            } else {
+                                                console.warn('Re-sync failed:', data.error);
+                                            }
+                                        } finally {
+                                            setResyncing(false);
+                                        }
+                                    }}
+                                    disabled={resyncing}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 disabled:opacity-60"
+                                >
+                                    <RefreshCw className={`w-3 h-3 ${resyncing ? 'animate-spin' : ''}`} />
+                                    {resyncing ? 'Syncing…' : 'Re-sync from WooCommerce'}
+                                </button>
+                            )}
+                        </div>
+                        {order.items.length === 0 && (
+                            <p className="text-sm text-slate-500 mb-3">No line items in the app. Re-sync from WooCommerce to load this order&apos;s items.</p>
+                        )}
                         <div className="space-y-4">
                             {order.items.map((item, idx) => {
                                 const images = itemImages[item.id] || { front: null, back: null };

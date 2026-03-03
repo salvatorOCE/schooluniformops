@@ -1,0 +1,13 @@
+# Root redirect: build and publish from ops-app
+# In Netlify UI set Base directory to "ops-app", or deploy from ops-app with: netlify deploy --prod
+
+[build]
+  base = "ops-app"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "WOO_URL,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

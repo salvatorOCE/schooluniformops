@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveOrderUuid } from '@/lib/woo-utils';
 import WooCommerceRestApi from '@woocommerce/woocommerce-rest-api';
 
 function getWooClient() {
@@ -10,8 +11,8 @@ function getWooClient() {
     return new WooCommerceRestApi({ url, consumerKey, consumerSecret, version: 'wc/v3' });
 }
 
-/** GET /api/woo/order-details?orderId=<supabase-order-uuid>
- * Fetches full WooCommerce order (billing, shipping, dates, payment, line items, etc.) for the given Supabase order id.
+/** GET /api/woo/order-details?orderId=<supabase-order-uuid|order_number>
+ * Fetches full WooCommerce order (billing, shipping, dates, payment, line items, etc.) for the given Supabase order id or order number.
  */
 export async function GET(req: NextRequest) {
     const orderId = req.nextUrl.searchParams.get('orderId');
@@ -29,10 +30,15 @@ export async function GET(req: NextRequest) {
     }
 
     try {
+        const orderUuid = await resolveOrderUuid(orderId);
+        if (!orderUuid) {
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        }
+
         const { data: orderRow, error } = await supabaseAdmin
             .from('orders')
             .select('woo_order_id')
-            .eq('id', orderId)
+            .eq('id', orderUuid)
             .single();
 
         if (error || !orderRow?.woo_order_id) {

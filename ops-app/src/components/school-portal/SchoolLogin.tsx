@@ -1,23 +1,21 @@
 import { useState } from 'react';
-import { School, ArrowRight, Lock } from 'lucide-react';
+import { School, ArrowRight } from 'lucide-react';
 
 interface SchoolLoginProps {
     onLogin: (schoolCode: string) => void;
 }
 
+/** Shown to admins only: pick a school to preview that school’s portal. */
 export function SchoolLogin({ onLogin }: SchoolLoginProps) {
     const [code, setCode] = useState('');
-    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const c = code.trim().toUpperCase() || 'WARRADALE';
         setLoading(true);
-        // Mock Auth Delay
-        setTimeout(() => {
-            onLogin(code || 'STMARYS'); // Default mock
-            setLoading(false);
-        }, 800);
+        onLogin(c);
+        setLoading(false);
     };
 
     return (
@@ -28,39 +26,26 @@ export function SchoolLogin({ onLogin }: SchoolLoginProps) {
                         <School className="w-8 h-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold">School Portal</h1>
-                    <p className="text-indigo-100 mt-2 text-sm">Staff Login</p>
+                    <p className="text-indigo-100 mt-2 text-sm">Admin: view as school</p>
                 </div>
 
                 <div className="p-8">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">School Code</label>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">School code</label>
                             <input
                                 type="text"
                                 className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                                placeholder="e.g. STMARYS"
+                                placeholder="e.g. WARRADALE"
                                 value={code}
                                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Password</label>
-                            <div className="relative">
-                                <input
-                                    type="password"
-                                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                                    placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                                <Lock className="absolute right-3 top-3.5 w-5 h-5 text-slate-400" />
-                            </div>
-                        </div>
 
                         <button
                             type="submit"
-                            disabled={loading || !password}
-                            className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all ${loading || !password
+                            disabled={loading || !code.trim()}
+                            className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all ${loading || !code.trim()
                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                     : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'
                                 }`}
@@ -69,13 +54,13 @@ export function SchoolLogin({ onLogin }: SchoolLoginProps) {
                                 <span className="loading loading-spinner loading-sm"></span>
                             ) : (
                                 <>
-                                    Login to Portal <ArrowRight className="w-5 h-5" />
+                                    View portal <ArrowRight className="w-5 h-5" />
                                 </>
                             )}
                         </button>
 
                         <div className="text-center text-xs text-slate-400 mt-4">
-                            Protected System • School Uniform Solutions
+                            School staff log in on the main login page with their school password.
                         </div>
                     </form>
                 </div>

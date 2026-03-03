@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Package, Search, RefreshCw, Pencil, X, Download } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Package, Search, RefreshCw, Pencil, X, Download, ChevronDown, ChevronRight, ImageIcon, BarChart3 } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
+import { useSession } from '@/lib/session-context';
 import { exportToCSV } from '@/lib/csv-export';
 import { useMobile } from '@/lib/mobile-context';
 import type { ProductListRow, ProductUpdatePayload } from '@/lib/types';
@@ -37,9 +38,94 @@ function formatMoney(n: number | null): string {
     return `$${Number(n).toFixed(2)}`;
 }
 
+function ProductDetailPanel({ productId, isSchool }: { productId: string; isSchool: boolean }) {
+    const [images, setImages] = useState<{ front: string | null; back: string | null; images: string[] } | null>(null);
+    const [stats, setStats] = useState<Record<string, number> | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        const opts: RequestInit = { credentials: 'same-origin' };
+        Promise.all([
+            fetch(`/api/woo/product-images?productId=${encodeURIComponent(productId)}`, opts).then(async r => {
+                const json = await r.json().catch(() => null);
+                if (!r.ok || (json && 'error' in json)) return null;
+                return json;
+            }),
+            fetch(`/api/products/${encodeURIComponent(productId)}/stats`, opts).then(async r => {
+                const json = await r.json().catch(() => null);
+                if (!r.ok || (json && 'error' in json)) return null;
+                return json;
+            }),
+        ]).then(([imgRes, statsRes]) => {
+            if (cancelled) return;
+            setImages(imgRes?.front != null || imgRes?.images?.length ? imgRes : null);
+            setStats(statsRes && typeof statsRes.unitsSold === 'number' ? statsRes : null);
+        }).finally(() => {
+            if (!cancelled) setLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [productId]);
+
+    if (loading) {
+        return <div className="px-4 py-6 text-sm text-slate-500">Loading…</div>;
+    }
+
+    const imageUrls = images?.images?.length ? images.images : [images?.front, images?.back].filter(Boolean) as string[];
+
+    return (
+        <div className="px-4 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row gap-6">
+            {/* Photos */}
+            <div className="shrink-0">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5" /> Photos
+                </h4>
+                {imageUrls.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                        {imageUrls.slice(0, 4).map((url, i) => (
+                            <img
+                                key={i}
+                                src={url}
+                                alt={`Product ${i + 1}`}
+                                className="w-20 h-20 object-cover rounded-lg border border-slate-200 bg-white"
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-slate-400">No images available</p>
+                )}
+            </div>
+            {/* Analytics */}
+            <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" /> Analytics
+                </h4>
+                {stats ? (
+                    <div className="flex flex-wrap gap-4 text-sm">
+                        <div><span className="text-slate-500">Units sold</span> <span className="font-medium text-slate-900">{stats.unitsSold ?? 0}</span></div>
+                        <div><span className="text-slate-500">Orders</span> <span className="font-medium text-slate-900">{stats.numOrders ?? 0}</span></div>
+                        <div><span className="text-slate-500">Avg per order</span> <span className="font-medium text-slate-900">{stats.avgPerOrder ?? 0}</span></div>
+                        {!isSchool && (
+                            <>
+                                <div><span className="text-slate-500">Revenue</span> <span className="font-medium text-slate-900">{formatMoney(stats.revenue)}</span></div>
+                                <div><span className="text-slate-500">Cost</span> <span className="font-medium text-slate-900">{formatMoney(stats.totalCost)}</span></div>
+                                <div><span className="text-slate-500">Profit</span> <span className="font-medium text-emerald-700">{formatMoney(stats.profit)}</span></div>
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <p className="text-sm text-slate-400">No sales data yet</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function AllProductsPage() {
     const adapter = useData();
     const { isMobile } = useMobile();
+    const { role, schoolCode } = useSession();
     const [products, setProducts] = useState<ProductListRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -62,6 +148,7 @@ export default function AllProductsPage() {
     }>({ name: '', sku: '', category: '', price: '', school_id: '', manufacturer_name: '', manufacturer_id: '', manufacturer_id_kids: '', manufacturer_id_adult: '', manufacturer_product: '', is_available_for_sale: true, cost: '', embroidery_print_cost: '' });
     const [editError, setEditError] = useState<string | null>(null);
     const [schools, setSchools] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
@@ -83,22 +170,44 @@ export default function AllProductsPage() {
         adapter.getSchools().then(setSchools).catch(() => {});
     }, [adapter]);
 
+    const isSchool = role === 'school';
+
+    const schoolScoped = useMemo(() => {
+        if (role !== 'school' || !schoolCode) return products;
+        const norm = (v: string | null | undefined) => (v || '').trim().toUpperCase();
+        const target = norm(schoolCode);
+        if (!target) return products;
+        return products.filter((p) => {
+            const code = norm(p.school_code);
+            const name = norm(p.school_name);
+            if (code && (code === target || code.startsWith(target) || target.startsWith(code))) {
+                return true;
+            }
+            if (name && (name.includes(target) || target.includes(name))) {
+                return true;
+            }
+            return false;
+        });
+    }, [products, role, schoolCode]);
+
     const filtered = useMemo(() => {
-        if (!search.trim()) return products;
+        if (!search.trim()) return schoolScoped;
         const q = search.toLowerCase().trim();
-        return products.filter(
+        return schoolScoped.filter(
             (p) =>
                 (p.sku && p.sku.toLowerCase().includes(q)) ||
                 p.name.toLowerCase().includes(q) ||
                 (p.school_name && p.school_name.toLowerCase().includes(q)) ||
                 (p.school_code && p.school_code.toLowerCase().includes(q)) ||
                 (p.category && p.category.toLowerCase().includes(q)) ||
-                (p.manufacturer_name && p.manufacturer_name.toLowerCase().includes(q)) ||
-                (p.manufacturer_id && p.manufacturer_id.toLowerCase().includes(q)) ||
-                (p.manufacturer_id_kids && p.manufacturer_id_kids.toLowerCase().includes(q)) ||
-                (p.manufacturer_id_adult && p.manufacturer_id_adult.toLowerCase().includes(q))
+                (!isSchool && (
+                    (p.manufacturer_name && p.manufacturer_name.toLowerCase().includes(q)) ||
+                    (p.manufacturer_id && p.manufacturer_id.toLowerCase().includes(q)) ||
+                    (p.manufacturer_id_kids && p.manufacturer_id_kids.toLowerCase().includes(q)) ||
+                    (p.manufacturer_id_adult && p.manufacturer_id_adult.toLowerCase().includes(q))
+                ))
         );
-    }, [products, search]);
+    }, [schoolScoped, search, isSchool]);
 
     const openEdit = (p: ProductListRow) => {
         setEditing(p);
@@ -186,7 +295,7 @@ export default function AllProductsPage() {
                             </h1>
                             {!isMobile && (
                                 <p className="text-slate-500 font-medium mt-0.5 text-sm">
-                                    Codes, price (charged), manufacturer, stock. Use manufacturer ID when placing garment orders.
+                                    {isSchool ? 'Product codes, school, and price charged.' : 'Codes, price (charged), manufacturer, stock. Use manufacturer ID when placing garment orders.'}
                                 </p>
                             )}
                         </div>
@@ -195,7 +304,7 @@ export default function AllProductsPage() {
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 <input
                                     type="text"
-                                    placeholder="Search SKU, name, school, manufacturer..."
+                                    placeholder={isSchool ? 'Search SKU, name, school...' : 'Search SKU, name, school, manufacturer...'}
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
@@ -211,23 +320,34 @@ export default function AllProductsPage() {
                             </button>
                             <button
                                 type="button"
-                                onClick={() => exportToCSV(filtered.map(p => ({ ...p, _mfrId: manufacturerIdDisplay(p), _totalCost: totalCost(p) })), {
-                                    filename: 'products',
-                                    columns: [
-                                        { key: 'sku', label: 'Code SKU' },
-                                        { key: 'name', label: 'Name' },
-                                        { key: 'school_name', label: 'School' },
-                                        { key: 'manufacturer_name', label: 'Manufacturer' },
-                                        { key: 'manufacturer_product', label: 'Manufacturer product' },
-                                        { key: '_mfrId', label: 'Manufacturer Product ID (Kids/Adult)' },
-                                        { key: 'price', label: 'Price charged' },
-                                        { key: 'cost', label: 'Cost for us' },
-                                        { key: 'embroidery_print_cost', label: 'Total Embroidery/Print cost' },
-                                        { key: '_totalCost', label: 'Total Cost' },
-                                        { key: 'woocommerce_id', label: 'WOO ID' },
-                                        { key: 'updated_at', label: 'Last Updated' },
-                                    ],
-                                })}
+                                onClick={() => exportToCSV(
+                                    filtered.map(p => isSchool ? { sku: p.sku, name: p.name, school_code: p.school_code, school_name: p.school_name, price: p.price } : { ...p, _mfrId: manufacturerIdDisplay(p), _totalCost: totalCost(p) }),
+                                    {
+                                        filename: 'products',
+                                        columns: isSchool
+                                            ? [
+                                                { key: 'sku', label: 'Code SKU' },
+                                                { key: 'name', label: 'Name' },
+                                                { key: 'school_code', label: 'School code' },
+                                                { key: 'school_name', label: 'School name' },
+                                                { key: 'price', label: 'Price charged' },
+                                            ]
+                                            : [
+                                                { key: 'sku', label: 'Code SKU' },
+                                                { key: 'name', label: 'Name' },
+                                                { key: 'school_name', label: 'School' },
+                                                { key: 'manufacturer_name', label: 'Manufacturer' },
+                                                { key: 'manufacturer_product', label: 'Manufacturer product' },
+                                                { key: '_mfrId', label: 'Manufacturer Product ID (Kids/Adult)' },
+                                                { key: 'price', label: 'Price charged' },
+                                                { key: 'cost', label: 'Cost for us' },
+                                                { key: 'embroidery_print_cost', label: 'Total Embroidery/Print cost' },
+                                                { key: '_totalCost', label: 'Total Cost' },
+                                                { key: 'woocommerce_id', label: 'WOO ID' },
+                                                { key: 'updated_at', label: 'Last Updated' },
+                                            ],
+                                    }
+                                )}
                                 disabled={filtered.length === 0}
                                 className="p-2 border border-slate-200 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
                                 title="Export CSV"
@@ -246,56 +366,95 @@ export default function AllProductsPage() {
             <div className="flex-1 p-4 md:p-6 min-w-0">
                 <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm min-w-[900px]">
+                        <table className={`w-full text-sm ${isSchool ? 'min-w-[400px]' : 'min-w-[900px]'}`}>
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="px-2 py-3 w-10" aria-label="Expand" />
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Code SKU</th>
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Name</th>
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">School</th>
-                                    <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer</th>
-                                    <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer product</th>
-                                    <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer Product ID (Kids/Adult)</th>
+                                    {!isSchool && (
+                                        <>
+                                            <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer</th>
+                                            <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer product</th>
+                                            <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Manufacturer Product ID (Kids/Adult)</th>
+                                        </>
+                                    )}
                                     <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Price charged</th>
-                                    <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Cost for us</th>
-                                    <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Total Embroidery/Print cost</th>
-                                    <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Total Cost</th>
-                                    <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">WOO ID</th>
-                                    <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Last Updated</th>
-                                    <th className="px-3 py-3 w-10" aria-label="Edit" />
+                                    {!isSchool && (
+                                        <>
+                                            <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Cost for us</th>
+                                            <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Total Embroidery/Print cost</th>
+                                            <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Total Cost</th>
+                                            <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">WOO ID</th>
+                                            <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Last Updated</th>
+                                            <th className="px-3 py-3 w-10" aria-label="Edit" />
+                                        </>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filtered.map((p) => (
-                                    <tr key={p.id} className="hover:bg-slate-50/80">
-                                        <td className="px-3 py-2.5 font-mono text-slate-700">{p.sku ?? '—'}</td>
+                                    <React.Fragment key={p.id}>
+                                        <tr
+                                            className="hover:bg-slate-50/80 cursor-pointer"
+                                            onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
+                                        >
+                                            <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
+                                                    className="p-1 rounded text-slate-400 hover:text-slate-600"
+                                                    aria-label={expandedId === p.id ? 'Collapse' : 'Expand'}
+                                                >
+                                                    {expandedId === p.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                </button>
+                                            </td>
+                                            <td className="px-3 py-2.5 font-mono text-slate-700">{p.sku ?? '—'}</td>
                                         <td className="px-3 py-2.5 font-medium text-slate-900">{p.name}</td>
                                         <td className="px-3 py-2.5 text-slate-600">
                                             {p.school_name ? (
-                                                <span title={p.school_code ?? undefined}>{p.school_name}</span>
+                                                <span title={p.school_code ?? undefined}>{p.school_name}{p.school_code ? ` (${p.school_code})` : ''}</span>
                                             ) : (
                                                 '—'
                                             )}
                                         </td>
-                                        <td className="px-3 py-2.5 text-slate-700">{p.manufacturer_name ?? '—'}</td>
-                                        <td className="px-3 py-2.5 text-slate-600">{p.manufacturer_product ?? '—'}</td>
-                                        <td className="px-3 py-2.5 font-mono text-slate-600 text-xs">{manufacturerIdDisplay(p)}</td>
+                                        {!isSchool && (
+                                            <>
+                                                <td className="px-3 py-2.5 text-slate-700">{p.manufacturer_name ?? '—'}</td>
+                                                <td className="px-3 py-2.5 text-slate-600">{p.manufacturer_product ?? '—'}</td>
+                                                <td className="px-3 py-2.5 font-mono text-slate-600 text-xs">{manufacturerIdDisplay(p)}</td>
+                                            </>
+                                        )}
                                         <td className="px-3 py-2.5 text-right font-medium text-slate-900">{formatMoney(p.price)}</td>
-                                        <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.cost)}</td>
-                                        <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.embroidery_print_cost)}</td>
-                                        <td className="px-3 py-2.5 text-right font-medium text-slate-700">{formatMoney(totalCost(p))}</td>
-                                        <td className="px-3 py-2.5 text-right font-mono text-slate-500 text-xs">{p.woocommerce_id ?? '—'}</td>
-                                        <td className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDate(p.updated_at)}</td>
-                                        <td className="px-3 py-2.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => openEdit(p)}
-                                                className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                                                title="Edit product"
-                                            >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
+                                        {!isSchool && (
+                                            <>
+                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.cost)}</td>
+                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.embroidery_print_cost)}</td>
+                                                <td className="px-3 py-2.5 text-right font-medium text-slate-700">{formatMoney(totalCost(p))}</td>
+                                                <td className="px-3 py-2.5 text-right font-mono text-slate-500 text-xs">{p.woocommerce_id ?? '—'}</td>
+                                                <td className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDate(p.updated_at)}</td>
+                                                <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEdit(p)}
+                                                        className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                                        title="Edit product"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </>
+                                        )}
+                                        </tr>
+                                        {expandedId === p.id && (
+                                            <tr>
+                                                <td colSpan={isSchool ? 5 : 14} className="p-0 align-top">
+                                                    <ProductDetailPanel productId={p.id} isSchool={isSchool} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>

@@ -195,14 +195,18 @@ export interface SystemEvent {
 
 // Fix-Up System Types
 export type FixUpType = 'SIZE_EXCHANGE' | 'PRINT_ERROR' | 'EMBROIDERY_ERROR' | 'WRONG_PERSONALISATION' | 'DAMAGED_ITEM' | 'MISSING_ITEM' | 'OTHER';
-export type FixUpStatus = 'OPEN' | 'WAITING_STOCK' | 'IN_PRODUCTION' | 'PACKED' | 'DISPATCHED' | 'CLOSED';
+export type FixUpStatus = 'OPEN' | 'WAITING_STOCK' | 'IN_PRODUCTION' | 'PACKED' | 'DISPATCHED' | 'SHIPPED' | 'CLOSED';
 
 export interface FixUpRequest {
   id: string;
   original_order_id: string;
   original_order_number: string;
   student_name: string;
+  parent_name?: string | null;
+  parent_email?: string | null;
+  parent_phone?: string | null;
   school_name: string;
+  school_code?: string | null;
   type: FixUpType;
   status: FixUpStatus;
   priority: 'HIGH' | 'CRITICAL';
@@ -369,6 +373,8 @@ export interface OrderHistoryRecord {
   paidAt?: Date;
   hasIssues: boolean;
   hasPartialEmbroidery: boolean;
+  /** True when the order has at least one admin/school note */
+  hasNotes?: boolean;
   events: HistoryEvent[];
 }
 

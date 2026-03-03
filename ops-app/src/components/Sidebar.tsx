@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -17,7 +17,6 @@ import {
     ChevronRight,
     Settings,
     Calendar,
-    School,
     Search,
     LogOut,
     StickyNote,
@@ -25,6 +24,8 @@ import {
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
+import { useSession } from '@/lib/session-context';
+import { useData } from '@/lib/data-provider';
 
 export interface NavItem {
     href: string;
@@ -40,6 +41,13 @@ export const importantNotesNavItem: NavItem = {
     icon: StickyNote,
 };
 
+/** Nav for school users (non-admin): Orders, Recovery Center, Product list only */
+export const schoolNavItems: NavItem[] = [
+    { href: '/orders', label: 'Orders', icon: Clock },
+    { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
+    { href: '/products', label: 'Product list', icon: ListOrdered },
+];
+
 export const navItems: NavItem[] = [
     importantNotesNavItem,
     { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -51,7 +59,6 @@ export const navItems: NavItem[] = [
     { href: '/school-runs', label: 'School Bulk', icon: Bus },
     { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
     { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
-    { href: '/school-portal', label: 'School Portal', icon: School },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
     { href: '/products', label: 'All Products', icon: ListOrdered },
     { href: '/tracking', label: 'Order Tracking', icon: Search },
@@ -75,18 +82,18 @@ export const workInProgressNavItems: NavItem[] = [
     { href: '/', label: 'Overview', icon: LayoutDashboard },
     { href: '/embroidery', label: 'Embroidery', icon: Scissors },
     { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
-    { href: '/school-portal', label: 'School Portal', icon: School },
     { href: '/tracking', label: 'Order Tracking', icon: Search },
 ];
 
-interface SidebarProps {
-    exceptionCount?: number;
-}
-
-export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
+export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
     const { isMobile } = useMobile();
+    const adapter = useData();
+    const { role, schoolCode, loading: sessionLoading } = useSession();
+    // While session is loading, show school (restricted) nav so school users never see a flash of admin modules
+    const isSchool = sessionLoading || role === 'school';
+    const [recoveryCount, setRecoveryCount] = useState(0);
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean, message: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
@@ -126,6 +133,48 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
         router.refresh();
     };
 
+    // Load Recovery Center badge count (exceptions + active fix-ups), scoped by school for school users
+    useEffect(() => {
+        let cancelled = false;
+        const norm = (v: string | null | undefined) => (v || '').trim().toUpperCase();
+
+        const loadRecoveryCount = async () => {
+            try {
+                const [exceptions, fixUps] = await Promise.all([
+                    adapter.getExceptions(),
+                    adapter.getFixUps()
+                ]);
+
+                let scopedExceptions = exceptions;
+                let scopedFixUps = fixUps;
+
+                if (isSchool && schoolCode) {
+                    const target = norm(schoolCode);
+                    if (target) {
+                        const matchBySchool = (name?: string | null, code?: string | null) => {
+                            const n = norm(name);
+                            const c = norm(code);
+                            if (c && (c === target || c.startsWith(target) || target.startsWith(c))) return true;
+                            if (n && (n.includes(target) || target.includes(n))) return true;
+                            return false;
+                        };
+                        scopedExceptions = exceptions.filter(e => matchBySchool(e.school_name, e.school_code));
+                        scopedFixUps = fixUps.filter(f => matchBySchool(f.school_name, (f as any).school_code));
+                    }
+                }
+
+                const activeFixUps = scopedFixUps.filter(f => f.status !== 'CLOSED');
+                const count = scopedExceptions.length + activeFixUps.length;
+                if (!cancelled) setRecoveryCount(count);
+            } catch (e) {
+                if (!cancelled) setRecoveryCount(0);
+            }
+        };
+
+        loadRecoveryCount();
+        return () => { cancelled = true; };
+    }, [adapter, isSchool, schoolCode]);
+
     if (isMobile) return null;
 
     return (
@@ -139,12 +188,14 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
 
             {/* Navigation */}
             <nav className="flex-1 px-3 py-6 flex flex-col overflow-y-auto">
-                <div className="px-3 mb-2 text-[10px] font-bold text-emerald-500/80 uppercase tracking-widest">Modules</div>
+                <div className="px-3 mb-2 text-[10px] font-bold text-emerald-500/80 uppercase tracking-widest">
+                    {isSchool ? 'School view' : 'Modules'}
+                </div>
                 <div className="space-y-1">
-                    {mainNavItems.map((item) => {
+                    {(isSchool ? schoolNavItems : mainNavItems).map((item) => {
                         const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
                         const isRecovery = item.href === '/exceptions';
-                        const showBadge = isRecovery && exceptionCount > 0;
+                        const showBadge = isRecovery && recoveryCount > 0;
 
                         return (
                             <Link
@@ -167,7 +218,7 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
 
                                 {showBadge && (
                                     <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                                        {exceptionCount}
+                                        {recoveryCount}
                                     </span>
                                 )}
                             </Link>
@@ -175,7 +226,8 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
                     })}
                 </div>
 
-                {/* Work in progress — bottom section */}
+                {/* Work in progress — bottom section (admin only) */}
+                {!isSchool && (
                 <div className="mt-auto pt-6 pb-2">
                     <div className="px-3 mb-2 text-[10px] font-bold text-amber-500/70 uppercase tracking-widest">Work in progress</div>
                     <div className="space-y-1">
@@ -200,16 +252,18 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
                                     <span className="flex-1 text-sm tracking-wide">{item.label}</span>
                                     {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
                                 </Link>
-                            );
-                        })}
+                        );
+                    })}
                     </div>
                 </div>
+                )}
             </nav>
 
             {/* User Profile / Context */}
             <div className="p-4 border-t border-[#004440] bg-[#002523] space-y-4">
 
-                {/* Manual Sync Utility */}
+                {/* Manual Sync Utility (admin only) */}
+                {!isSchool && (
                 <div className="bg-[#001D1B] p-2 rounded-lg border border-[#003B38] space-y-2">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-emerald-400/80 px-2 flex-1">
@@ -240,14 +294,17 @@ export function Sidebar({ exceptionCount = 0 }: SidebarProps) {
                         </div>
                     </div>
                 </div>
+                )}
 
                 <div className="flex items-center gap-3 group p-2 rounded-lg">
                     <div className="w-9 h-9 rounded bg-[#004440] flex items-center justify-center border border-[#005550] shadow-inner text-emerald-200">
                         <User className="w-4 h-4" />
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-emerald-50 truncate">School Uniform Solutions Admin</span>
-                        <span className="text-[10px] text-emerald-400/80 truncate">Admin</span>
+                        <span className="text-sm font-semibold text-emerald-50 truncate">
+                            {isSchool ? `${schoolCode ?? 'School'} Portal` : 'School Uniform Solutions Admin'}
+                        </span>
+                        <span className="text-[10px] text-emerald-400/80 truncate">{isSchool ? 'School view' : 'Admin'}</span>
                     </div>
                     <button
                         onClick={() => setShowSettings(true)}

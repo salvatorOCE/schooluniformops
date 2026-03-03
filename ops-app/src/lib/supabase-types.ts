@@ -133,6 +133,8 @@ export interface Database {
                     name: string
                     quantity: number
                     size: string | null
+                    nickname: string | null
+                    sent_quantity: number
                     unit_price?: number
                     total_price?: number
                     requires_embroidery: boolean
@@ -148,6 +150,8 @@ export interface Database {
                     name: string
                     quantity?: number
                     size?: string | null
+                    nickname?: string | null
+                    sent_quantity?: number
                     unit_price?: number
                     total_price?: number
                     requires_embroidery?: boolean

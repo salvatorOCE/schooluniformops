@@ -2,6 +2,7 @@
 
 import { Order, OrderItem } from '@/lib/types';
 import { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 
 interface PackingSessionViewProps {
     schoolName: string;
@@ -15,9 +16,11 @@ interface PackingSessionViewProps {
     onUpdateOrder?: (orderId: string, items: any[]) => Promise<void>;
     /** When user clicks "Finish pack out": packed orders in this session, for manifest PDF + saving to Order Tracking */
     onFinishPackOut?: (packedOrders: Order[], schoolCode: string, schoolName: string) => void;
+    /** Called after re-sync from WooCommerce so parent can reload sessions */
+    onRefresh?: () => void;
 }
 
-export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSection, onPack, onBack, onReportIssue, onUpdateOrder, onFinishPackOut }: PackingSessionViewProps) {
+export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSection, onPack, onBack, onReportIssue, onUpdateOrder, onFinishPackOut, onRefresh }: PackingSessionViewProps) {
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const [checkedState, setCheckedState] = useState<Record<string, Record<string, boolean>>>({});
     const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
@@ -25,6 +28,7 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
     // Editing State
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
     const [editItems, setEditItems] = useState<any[]>([]); // Temp state for items being edited
+    const [resyncingOrderId, setResyncingOrderId] = useState<string | null>(null);
 
     // Deduplicate orders to prevent key errors
     const uniqueOrders = orders.filter((order, index, self) =>
@@ -83,15 +87,13 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
     };
 
     const handleConfirmPack = (order: Order) => {
-        // Optimistic update: Add to completed list immediately
+        // Only add to session “packed” list; nothing is persisted until user clicks "Complete pack out"
         setCompletedOrders(prev => [order, ...prev]);
-        // Trigger actual pack
-        onPack(order.id);
-        // Collapse
         setExpandedIds(prev => prev.filter(id => id !== order.id));
     };
 
     const isOrderReady = (order: Order) => {
+        if (order.items.length === 0) return false;
         const checks = checkedState[order.id] || {};
         const allItems = order.items.every(item => checks[item.id]);
         const nameChecked = checks['name_check'];
@@ -216,6 +218,34 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
                                             )}
 
                                             {/* Item Checklist */}
+                                            {order.items.length === 0 && (
+                                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                                                    <p className="text-sm text-amber-800 flex-1">No line items loaded for this order. Re-sync from WooCommerce to load items.</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            setResyncingOrderId(order.id);
+                                                            try {
+                                                                const res = await fetch('/api/woo/pull-sync', {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ orderNumber: order.order_number })
+                                                                });
+                                                                const data = await res.json().catch(() => ({}));
+                                                                if (data.success) onRefresh?.();
+                                                            } finally {
+                                                                setResyncingOrderId(null);
+                                                            }
+                                                        }}
+                                                        disabled={resyncingOrderId === order.id}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 bg-white border border-amber-300 rounded-md hover:bg-amber-100 disabled:opacity-60 shrink-0"
+                                                    >
+                                                        <RefreshCw className={`w-3.5 h-3.5 ${resyncingOrderId === order.id ? 'animate-spin' : ''}`} />
+                                                        {resyncingOrderId === order.id ? 'Syncing…' : 'Re-sync from WooCommerce'}
+                                                    </button>
+                                                </div>
+                                            )}
                                             <div className="space-y-2">
                                                 {(editingOrderId === order.id ? editItems : order.items).map((item) => {
                                                     const isDisabled = editingOrderId !== order.id && item.requires_embroidery && item.embroidery_status === 'PENDING';

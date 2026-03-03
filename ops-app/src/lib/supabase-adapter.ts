@@ -560,9 +560,9 @@ export class SupabaseAdapter implements DataAdapter {
                 size: i.size || undefined,
                 requires_embroidery: i.requires_embroidery,
                 embroidery_status: i.embroidery_status === 'DONE' ? 'DONE' : 'PENDING',
-                unit_price: (i as any).unit_price != null ? Number((i as any).unit_price) : undefined,
-                sent_quantity: (i as any).sent_quantity != null ? Number((i as any).sent_quantity) : 0,
-                nickname: (i as any).nickname ?? undefined
+                unit_price: i.unit_price != null ? Number(i.unit_price) : undefined,
+                sent_quantity: i.sent_quantity != null ? Number(i.sent_quantity) : 0,
+                nickname: i.nickname ?? undefined
             })),
             created_at: row.created_at,
             paid_at: row.paid_at || row.created_at,
@@ -672,9 +672,9 @@ export class SupabaseAdapter implements DataAdapter {
         if (statuses && statuses.length > 0) {
             query = query.in('status', statuses);
         } else {
-            // Default queue for Distribution/Dispatch: show orders that have left packing
-            // and are awaiting final delivery confirmation.
-            query = query.in('status', ['Shipped']);
+            // Default queue for Distribution/Dispatch: orders that have left packing
+            // and are awaiting shipment (Packed).
+            query = query.in('status', ['Packed']);
         }
 
         if (deliveryType) {
@@ -686,8 +686,8 @@ export class SupabaseAdapter implements DataAdapter {
     }
 
     async getSchoolRuns(): Promise<SchoolRunGroup[]> {
-        // Complex aggregation provided by RPC usually, or client-side mapping
-        const orders = await this.getDistributionQueue('SCHOOL');
+        // School runs that are Packed and ready to ship
+        const orders = await this.getDistributionQueue('SCHOOL', ['Packed']);
         // Grouping logic similar to mock adapter
         const grouped: Record<string, SchoolRunGroup> = {};
         orders.forEach(o => {
@@ -769,21 +769,20 @@ export class SupabaseAdapter implements DataAdapter {
     async packOrder(orderId: string): Promise<void> {
         if (!supabase) return;
 
-        // Fetch order items to deduct stock from the shelf
+        // Fetch order items so we can mark them fully sent and let
+        // updateOrderItemSentQuantity handle stock deduction per size.
         const { data: items } = await supabase
             .from('order_items')
-            .select('product_id, quantity, size')
-            .eq('order_id', orderId)
-            .not('product_id', 'is', null);
+            .select('id, quantity')
+            .eq('order_id', orderId);
 
         if (items && items.length > 0) {
             for (const item of items) {
-                if (item.product_id && item.size) {
-                    await supabase.rpc('deduct_stock', {
-                        p_product_id: item.product_id,
-                        p_size: item.size,
-                        p_quantity: item.quantity
-                    });
+                const qty = typeof item.quantity === 'number'
+                    ? item.quantity
+                    : parseInt((item as any).quantity || '0', 10) || 0;
+                if (item.id && qty > 0) {
+                    await this.updateOrderItemSentQuantity(item.id as string, qty);
                 }
             }
         }
@@ -814,24 +813,24 @@ export class SupabaseAdapter implements DataAdapter {
         await this.packOrder(orderId);
     }
 
-    // Dispatch School Run: when school confirms delivery, mark shipped orders as Completed
+    // Dispatch School Run: when truck leaves, mark all Packed orders for a school as Shipped
     async dispatchSchoolRun(schoolCode: string): Promise<void> {
         if (!supabase) return;
         const { data } = await supabase
             .from('orders')
             .select('id, schools!inner(code)')
             .eq('schools.code', schoolCode)
-            .eq('status', 'Shipped');
+            .eq('status', 'Packed');
 
         const ids = (data || []).map(d => d.id);
         if (ids.length > 0) {
             await supabase.from('orders')
-                .update({ status: 'Completed' })
+                .update({ status: 'Shipped', dispatched_at: new Date().toISOString() })
                 .in('id', ids);
 
-            // Sync all to WooCommerce as Completed
+            // Sync all to WooCommerce as Shipped
             for (const id of ids) {
-                await this.syncStatusToWoo(id, 'Completed');
+                await this.syncStatusToWoo(id, 'Shipped');
             }
         }
     }
@@ -845,22 +844,22 @@ export class SupabaseAdapter implements DataAdapter {
         // Does `orders` table have `carrier`?
         // Migration doesn't mention it.
         // Assuming it's not in DB yet, so this might do nothing.
-        // But I'll implement update for 'HOME' + 'PACKED'.
+        // But we'll update for HOME + Packed.
         // Fetch affected IDs first
         const { data } = await supabase.from('orders')
             .select('id')
             .eq('delivery_method', 'HOME')
-            .eq('status', 'PACKED');
+            .eq('status', 'Packed');
 
         const ids = (data || []).map(d => d.id);
         if (ids.length > 0) {
             await supabase.from('orders')
-                .update({ status: 'DISPATCHED', dispatched_at: new Date().toISOString() })
+                .update({ status: 'Shipped', dispatched_at: new Date().toISOString() })
                 .in('id', ids);
 
             // Sync all to WooCommerce
             for (const id of ids) {
-                await this.syncStatusToWoo(id, 'DISPATCHED');
+                await this.syncStatusToWoo(id, 'Shipped');
             }
         }
         // TODO: Filter by carrier if column exists
@@ -929,9 +928,13 @@ export class SupabaseAdapter implements DataAdapter {
         if (!supabase) return;
 
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
-        const payload: { status: string; dispatched_at?: string } = { status };
+        const now = new Date().toISOString();
+        const payload: { status: string; dispatched_at?: string; packed_at?: string } = { status };
         if (status === 'Partial Order Complete' || status === 'Completed') {
-            payload.dispatched_at = new Date().toISOString();
+            payload.dispatched_at = now;
+        }
+        if (status === 'Packed' || status === 'Shipped' || status === 'Partial Order Complete' || status === 'Completed') {
+            payload.packed_at = now;
         }
 
         let query = supabase.from('orders').update(payload);
@@ -1057,10 +1060,13 @@ export class SupabaseAdapter implements DataAdapter {
 
     async getSchoolPickupOrders(schoolCode: string): Promise<Order[]> {
         if (!supabase) return [];
+        const code = schoolCode.toUpperCase().trim();
+        const { data: school } = await supabase.from('schools').select('id').eq('code', code).maybeSingle();
+        if (!school?.id) return [];
         const { data } = await supabase
             .from('orders')
             .select(`*, schools (code, name), order_items (*)`)
-            .eq('schools.code', schoolCode)
+            .eq('school_id', school.id)
             .eq('delivery_method', 'SCHOOL')
             .in('status', ['PACKED', 'DISPATCHED', 'COLLECTED']);
 
@@ -1078,10 +1084,10 @@ export class SupabaseAdapter implements DataAdapter {
             .from('products')
             .select(`id, sku, name, attributes, stock_on_shelf, stock_in_transit, schools (name)`);
 
-        // Fetch unprocessed orders
+        // Fetch unprocessed orders (only units not yet sent contribute to "unprocessed")
         const { data: items, error } = await supabase
             .from('order_items')
-            .select(`product_id, quantity, size, orders!inner(status)`)
+            .select(`product_id, quantity, sent_quantity, size, orders!inner(status)`)
             .in('orders.status', ['Processing', 'Embroidery', 'Distribution', 'In Production'])
             .not('product_id', 'is', null);
 
@@ -1093,7 +1099,14 @@ export class SupabaseAdapter implements DataAdapter {
                 const pid = item.product_id;
                 const size = item.size || '-';
                 const key = `${pid}::${size}`;
-                unprocessedMap[key] = (unprocessedMap[key] || 0) + item.quantity;
+                const qty = typeof item.quantity === 'number' ? item.quantity : parseInt(item.quantity || '0', 10) || 0;
+                const sent = typeof item.sent_quantity === 'number'
+                    ? item.sent_quantity
+                    : parseInt(item.sent_quantity || '0', 10) || 0;
+                const outstanding = Math.max(0, qty - sent);
+                if (outstanding > 0) {
+                    unprocessedMap[key] = (unprocessedMap[key] || 0) + outstanding;
+                }
             });
         }
 
@@ -1234,11 +1247,46 @@ export class SupabaseAdapter implements DataAdapter {
 
     async updateOrderItemSentQuantity(orderItemId: string, sentQuantity: number): Promise<void> {
         if (!supabase) throw new Error('Supabase not initialized');
+
+        // Read current line to calculate how many NEW units are being sent
+        const { data, error: readError } = await supabase
+            .from('order_items')
+            .select('product_id, size, quantity, sent_quantity')
+            .eq('id', orderItemId)
+            .single();
+
+        if (readError) {
+            throw new Error(readError.message || 'Failed to load order item for sent_quantity update');
+        }
+
+        const currentQty = typeof (data as any).quantity === 'number'
+            ? (data as any).quantity
+            : parseInt((data as any).quantity || '0', 10) || 0;
+        const prevSent = typeof (data as any).sent_quantity === 'number'
+            ? (data as any).sent_quantity
+            : parseInt((data as any).sent_quantity || '0', 10) || 0;
+
+        // Clamp new sent quantity between 0 and total quantity
+        const nextSent = Math.max(0, Math.min(currentQty, sentQuantity));
+        const delta = Math.max(0, nextSent - prevSent);
+
         const { error } = await supabase
             .from('order_items')
-            .update({ sent_quantity: Math.max(0, sentQuantity) })
+            .update({ sent_quantity: nextSent })
             .eq('id', orderItemId);
-        if (error) throw new Error(error.message || 'Failed to update sent quantity');
+
+        if (error) {
+            throw new Error(error.message || 'Failed to update sent quantity');
+        }
+
+        // Deduct stock_on_shelf for the NEWLY sent units only
+        if (delta > 0 && (data as any).product_id && (data as any).size) {
+            await supabase.rpc('deduct_stock', {
+                p_product_id: (data as any).product_id,
+                p_size: (data as any).size || '-',
+                p_quantity: delta
+            });
+        }
     }
 
     // --- FIX UPS ---
@@ -1250,7 +1298,9 @@ export class SupabaseAdapter implements DataAdapter {
                 *,
                 orders (
                     order_number,
+                    customer_name,
                     student_name,
+                    shipping_address,
                     schools (name)
                 )
             `)
@@ -1268,9 +1318,12 @@ export class SupabaseAdapter implements DataAdapter {
                 original_order_id: row.original_order_id || '',
                 original_order_number: o?.order_number || 'UNKNOWN',
                 student_name: o?.student_name || 'Unknown',
+                parent_name: o?.customer_name || null,
+                parent_email: (o?.shipping_address as any)?.email || null,
+                parent_phone: (o?.shipping_address as any)?.phone || null,
                 school_name: o?.schools?.name || 'Unknown',
                 type: row.type as any,
-                status: row.status as any,
+                status: row.status as FixUpRequest['status'],
                 priority: row.priority as any,
                 items: (row.items || []) as any[],
                 notes: row.notes || '',
@@ -1296,18 +1349,35 @@ export class SupabaseAdapter implements DataAdapter {
     }
 
     async updateFixUpStatus(id: string, status: any): Promise<void> {
-        if (!supabase) return;
-        await supabase.from('fix_ups').update({ status }).eq('id', id);
+        // Use server-side API with service role so updates work regardless of RLS
+        const res = await fetch('/api/fixups/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, status }),
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const msg = (data && data.error) || 'Failed to update fix-up status';
+            throw new Error(msg);
+        }
     }
 
     async updateFixUp(id: string, updates: { notes?: string; status?: FixUpRequest['status'] }): Promise<void> {
-        if (!supabase) return;
-        const payload: Record<string, unknown> = {};
+        const payload: Record<string, unknown> = { id };
         if (updates.notes !== undefined) payload.notes = updates.notes;
         if (updates.status !== undefined) payload.status = updates.status;
-        if (Object.keys(payload).length === 0) return;
-        const { error } = await supabase.from('fix_ups').update(payload).eq('id', id);
-        if (error) throw new Error(error.message || 'Failed to update fix-up');
+        if (!updates.notes && updates.status === undefined) return;
+
+        const res = await fetch('/api/fixups/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const msg = (data && data.error) || 'Failed to update fix-up';
+            throw new Error(msg);
+        }
     }
 
     // --- SCHEDULE ---
@@ -1444,10 +1514,10 @@ export class SupabaseAdapter implements DataAdapter {
     }
 
     // --- HISTORY & AUDIT ---
-    async getHistoryOrders(): Promise<import('./types').OrderHistoryRecord[]> {
+    async getHistoryOrders(schoolCode?: string | null): Promise<import('./types').OrderHistoryRecord[]> {
         if (!supabase) return [];
 
-        const { data, error } = await supabase
+        let query = supabase
             .from('orders')
             .select(`
                 *,
@@ -1455,16 +1525,39 @@ export class SupabaseAdapter implements DataAdapter {
                 order_items (*)
             `)
             .order('created_at', { ascending: false })
-            .limit(100); // Limit for performance
+            .limit(500); // Show recent orders; 191 etc. must appear in list
+
+        if (schoolCode?.trim()) {
+            const code = schoolCode.trim().toUpperCase();
+            const { data: school } = await supabase.from('schools').select('id').eq('code', code).maybeSingle();
+            if (school?.id) {
+                query = query.eq('school_id', school.id);
+            }
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             console.error('History Query Error:', error);
             return [];
         }
 
+        const orderIds = (data || []).map((o: any) => o.id).filter(Boolean);
+        let orderIdsWithNotes = new Set<string>();
+        if (orderIds.length > 0) {
+            const { data: noteRows, error: notesErr } = await supabase
+                .from('order_notes')
+                .select('order_id')
+                .in('order_id', orderIds);
+            if (!notesErr && noteRows) {
+                orderIdsWithNotes = new Set(noteRows.map((r: any) => r.order_id));
+            }
+        }
+
         return (data || []).map(o => {
-            // Map items
-            const items = (o.order_items as any[]).map(i => ({
+            // Map items (order_items can be missing if relation empty or not loaded)
+            const rawItems = Array.isArray(o.order_items) ? o.order_items : [];
+            const items = rawItems.map((i: any) => ({
                 itemId: i.id,
                 sku: i.sku,
                 productName: i.name,
@@ -1529,6 +1622,7 @@ export class SupabaseAdapter implements DataAdapter {
                 paidAt: o.paid_at ? new Date(o.paid_at) : undefined,
                 hasIssues: o.status === 'EXCEPTION',
                 hasPartialEmbroidery: false, // TODO
+                hasNotes: orderIdsWithNotes.has(o.id),
                 events: events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
             };
         });

@@ -29,7 +29,13 @@ const HistoryContext = createContext<HistoryContextType | undefined>(undefined);
 
 // --- Provider ---
 
-export function HistoryProvider({ children }: { children: ReactNode }) {
+interface HistoryProviderProps {
+    children: ReactNode;
+    /** When set (school user), only orders for this school are exposed */
+    schoolCode?: string | null;
+}
+
+export function HistoryProvider({ children, schoolCode }: HistoryProviderProps) {
     const adapter = useData();
     const [orders, setOrders] = useState<OrderHistoryRecord[]>([]);
     const [batches, setBatches] = useState<BatchHistoryRecord[]>([]);
@@ -40,7 +46,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         try {
             const [o, b, r] = await Promise.all([
-                adapter.getHistoryOrders(),
+                adapter.getHistoryOrders(schoolCode ?? undefined),
                 adapter.getHistoryBatches(),
                 adapter.getHistoryRuns()
             ]);
@@ -52,7 +58,27 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
-    }, [adapter]);
+    }, [adapter, schoolCode]);
+
+    const filteredOrders = schoolCode
+        ? orders.filter((o) => {
+            const norm = (v: string | null | undefined) => (v || '').trim().toUpperCase();
+            const target = norm(schoolCode);
+            if (!target) return true;
+            const code = norm(o.schoolCode);
+            const name = norm(o.schoolName);
+
+            // Direct or prefix match on code
+            if (code && (code === target || code.startsWith(target) || target.startsWith(code))) {
+                return true;
+            }
+            // Fuzzy match on name (e.g. "WARRADALE" inside "WARRADALE PRIMARY SCHOOL")
+            if (name && (name.includes(target) || target.includes(name))) {
+                return true;
+            }
+            return false;
+        })
+        : orders;
 
     useEffect(() => {
         load();
@@ -69,7 +95,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
 
         // If it's an order event, append to the specific order's timeline
         if (eventData.entityType === 'ORDER') {
-            setOrders(prev => prev.map(o => {
+            setOrders(prev => prev.map((o) => {
                 if (o.orderId === eventData.entityId) {
                     return {
                         ...o,
@@ -85,10 +111,10 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
         console.log('Event Logged:', newEvent);
     };
 
-    const getOrder = (orderId: string) => orders.find(o => o.orderId === orderId);
+    const getOrder = (orderId: string) => filteredOrders.find(o => o.orderId === orderId);
 
     return (
-        <HistoryContext.Provider value={{ orders, batches, runs, loading, logEvent, getOrder, refresh }}>
+        <HistoryContext.Provider value={{ orders: filteredOrders, batches, runs, loading, logEvent, getOrder, refresh }}>
             {children}
         </HistoryContext.Provider>
     );

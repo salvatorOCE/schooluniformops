@@ -310,9 +310,10 @@ async function sync() {
         const items = o.line_items.map((i: any) => {
             let nickname: string | null = null;
             if (i.meta_data && Array.isArray(i.meta_data)) {
-                const nickMeta = i.meta_data.find((m: any) =>
-                    m.key === 'Nickname' || m.key === 'pa_nickname' || (m.key && String(m.key).toLowerCase() === 'nickname')
-                );
+                const nickMeta = i.meta_data.find((m: any) => {
+                    const k = (m.key ?? m.display_key ?? '').toString().trim().toLowerCase();
+                    return k.includes('nickname');
+                });
                 if (nickMeta && (nickMeta.value ?? nickMeta.display_value)) nickname = String(nickMeta.value ?? nickMeta.display_value).trim();
             }
             return {

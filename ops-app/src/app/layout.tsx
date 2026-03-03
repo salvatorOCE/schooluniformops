@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
-import { AppShell } from "@/components/AppShell";
 import { MobileSimulator } from "@/components/MobileSimulator";
 import { MobileProvider } from "@/lib/mobile-context";
 import { UIProvider } from "@/lib/ui-context";
@@ -9,6 +8,7 @@ import { DataProvider } from "@/lib/data-provider";
 import { ToastProvider } from "@/lib/toast-context";
 import { Toaster } from "@/components/ui/Toaster";
 import { LayoutSwitcher } from "@/components/LayoutSwitcher";
+import { SessionProvider } from "@/lib/session-context";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -33,18 +33,20 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${poppins.variable} font-sans antialiased`}>
         <DataProvider>
-          <UIProvider>
-            <ToastProvider>
-              <MobileProvider>
-                <MobileSimulator>
+          <SessionProvider>
+            <UIProvider>
+              <ToastProvider>
+                <MobileProvider>
+                  <MobileSimulator>
                   <LayoutSwitcher>
-                    {children}
+                      {children}
                   </LayoutSwitcher>
-                </MobileSimulator>
-              </MobileProvider>
-              <Toaster />
-            </ToastProvider>
-          </UIProvider>
+                  </MobileSimulator>
+                </MobileProvider>
+                <Toaster />
+              </ToastProvider>
+            </UIProvider>
+          </SessionProvider>
         </DataProvider>
       </body>
     </html>

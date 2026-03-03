@@ -5,8 +5,9 @@ import { AppShell } from '@/components/AppShell';
 
 export function LayoutSwitcher({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+
   if (pathname === '/login') {
     return <>{children}</>;
   }
-  return <AppShell exceptionCount={3}>{children}</AppShell>;
+  return <AppShell>{children}</AppShell>;
 }

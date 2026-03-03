@@ -846,12 +846,23 @@ export class MockAdapter implements DataAdapter {
     }
 
     // --- History & Audit ---
-    async getHistoryOrders(): Promise<import('./types').OrderHistoryRecord[]> {
+    async getHistoryOrders(schoolCode?: string | null): Promise<import('./types').OrderHistoryRecord[]> {
         // Generate mock history records on the fly similar to HistoryContext
         // In a real app, this would query an audit table
 
+        const norm = (v: string | null | undefined) => (v || '').trim().toUpperCase();
+        const target = schoolCode?.trim() ? norm(schoolCode) : '';
+
         // Let's create a helper to map our Order to OrderHistoryRecord
-        const historyOrders = mockOrders.map(o => {
+        let ordersToMap = target
+            ? mockOrders.filter(o => {
+                const code = norm(o.school_code);
+                const name = norm(o.school_name);
+                return code === target || code.startsWith(target) || target.startsWith(code) || (name && (name.includes(target) || target.includes(name)));
+            })
+            : mockOrders;
+
+        const historyOrders = ordersToMap.map(o => {
             // Map items
             const items = o.items.map(i => ({
                 itemId: i.id,
@@ -919,6 +930,7 @@ export class MockAdapter implements DataAdapter {
                 updatedAt: new Date(o.paid_at || o.created_at), // simple fallback
                 hasIssues: o.order_status === 'EXCEPTION',
                 hasPartialEmbroidery: o.embroidery_status === 'PARTIAL',
+                hasNotes: false,
                 events: events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
             };
         });

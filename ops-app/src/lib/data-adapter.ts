@@ -74,8 +74,8 @@ export interface DataAdapter {
     getPackOutManifests(): Promise<import('./types').PackOutManifest[]>;
     getDeliveredOrders(): Promise<Order[]>;
 
-    // History & Audit
-    getHistoryOrders(): Promise<import('./types').OrderHistoryRecord[]>;
+    // History & Audit (schoolCode: when set, only that school's orders are returned)
+    getHistoryOrders(schoolCode?: string | null): Promise<import('./types').OrderHistoryRecord[]>;
     getHistoryBatches(): Promise<import('./types').BatchHistoryRecord[]>;
     getHistoryRuns(): Promise<import('./types').RunHistoryRecord[]>;
     getSystemEvents(orderId: string): Promise<import('./types').SystemEvent[]>;

@@ -4,15 +4,18 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Menu, X, LogOut } from 'lucide-react';
-import { navItems } from './Sidebar';
+import { navItems, schoolNavItems } from './Sidebar';
 import { cn } from '@/lib/utils';
 import { useMobile } from '@/lib/mobile-context';
+import { useSession } from '@/lib/session-context';
 
 export function MobileHeader() {
     const [isOpen, setIsOpen] = useState(false);
     const pathname = usePathname();
     const router = useRouter();
     const { isMobile } = useMobile();
+    const { role } = useSession();
+    const items = role === 'school' ? schoolNavItems : navItems;
 
     const handleLogout = async () => {
         setIsOpen(false);
@@ -54,7 +57,7 @@ export function MobileHeader() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto py-6 px-4 flex flex-col gap-2">
-                        {navItems.map((item) => {
+                        {items.map((item) => {
                             const isActive = pathname === item.href;
                             const Icon = item.icon;
 

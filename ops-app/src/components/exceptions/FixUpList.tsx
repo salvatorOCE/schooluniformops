@@ -20,13 +20,14 @@ const TYPE_CONFIG = {
 };
 
 const STATUSES = {
-    'OPEN': { label: 'Open', bg: 'bg-slate-100 text-slate-700' },
-    'WAITING_STOCK': { label: 'Ordering Stock', bg: 'bg-amber-100 text-amber-700' },
-    'IN_PRODUCTION': { label: 'In Production', bg: 'bg-purple-100 text-purple-700' },
-    'PACKED': { label: 'Packed', bg: 'bg-blue-100 text-blue-700' },
-    'DISPATCHED': { label: 'Completed', bg: 'bg-green-100 text-green-700' },
-    'CLOSED': { label: 'Closed', bg: 'bg-slate-200 text-slate-500' }
-};
+    OPEN: { label: 'Open', bg: 'bg-slate-100 text-slate-700' },
+    WAITING_STOCK: { label: 'Ordering Stock', bg: 'bg-amber-100 text-amber-700' },
+    IN_PRODUCTION: { label: 'In Production', bg: 'bg-purple-100 text-purple-700' },
+    PACKED: { label: 'Packed', bg: 'bg-blue-100 text-blue-700' },
+    DISPATCHED: { label: 'Dispatched', bg: 'bg-emerald-100 text-emerald-700' },
+    SHIPPED: { label: 'Shipped', bg: 'bg-indigo-100 text-indigo-700' },
+    CLOSED: { label: 'Closed', bg: 'bg-slate-200 text-slate-500' },
+} as const;
 
 // Icons helper
 function UserIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> }

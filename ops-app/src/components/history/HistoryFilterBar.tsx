@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { fuzzyMatch } from '@/lib/fuzzy-search';
 import { Calendar, ChevronDown, X, Building2, Truck, AlertTriangle, Search } from 'lucide-react';
 import { useHistory } from '@/lib/history-context';
+import { useSession } from '@/lib/session-context';
 
 /* --------------------------------------------------------------------------------
  * Reusable MultiSelectDropdown (Copied from SmartFilterBar for consistency)
@@ -159,8 +160,10 @@ interface HistoryFilterBarProps {
 
 export function HistoryFilterBar({ filters, onFilterChange }: HistoryFilterBarProps) {
     const { orders } = useHistory();
+    const { role } = useSession();
+    const isSchool = role === 'school';
 
-    // Derive options from data
+    // Derive options from data (school users only see their school; hide Schools filter)
     const uniqueSchools = Array.from(new Set(orders.map(o => o.schoolCode))).map(code => {
         const order = orders.find(o => o.schoolCode === code);
         return { value: code, label: order?.schoolName || code };
@@ -200,15 +203,17 @@ export function HistoryFilterBar({ filters, onFilterChange }: HistoryFilterBarPr
                 />
             </div>
 
-            {/* Bottom Row: Faceted Filters */}
+            {/* Bottom Row: Faceted Filters (Schools filter hidden for school users – they only see their school) */}
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
-                <MultiSelectDropdown
-                    label="Schools"
-                    icon={Building2}
-                    options={uniqueSchools}
-                    selected={filters.schools}
-                    onSelect={(vals) => updateFilter('schools', vals)}
-                />
+                {!isSchool && (
+                    <MultiSelectDropdown
+                        label="Schools"
+                        icon={Building2}
+                        options={uniqueSchools}
+                        selected={filters.schools}
+                        onSelect={(vals) => updateFilter('schools', vals)}
+                    />
+                )}
 
                 <MultiSelectDropdown
                     label="Delivery"
@@ -239,7 +244,7 @@ export function HistoryFilterBar({ filters, onFilterChange }: HistoryFilterBarPr
                     Has Issues
                 </button>
 
-                {/* Reset */}
+                {/* Reset (school users don't have schools filter, so check is same) */}
                 {(filters.search || filters.schools.length > 0 || filters.deliveryTypes.length > 0 || filters.statuses.length > 0 || filters.hasIssues) && (
                     <button
                         onClick={() => onFilterChange({ search: '', schools: [], deliveryTypes: [], statuses: [], hasIssues: false })}

@@ -30,44 +30,137 @@ export async function POST(req: NextRequest) {
         }
 
 
-        // Check if this is a full re-sync request
+        // Check if this is a full re-sync request or a single-order sync by number
         let body: any = {};
         try { body = await req.json(); } catch { /* empty body is fine */ }
         const isFullSync = body?.fullSync === true;
+        const singleOrderNumber = body?.orderNumber != null ? String(body.orderNumber).trim().replace(/^SUS[- ]?/i, '') : null;
+        const wooOrderId = body?.wooOrderId != null ? Number(body.wooOrderId) : null;
+        /** When syncing by WooCommerce ID, always refresh line items so list shows correct count (not 0) */
+        const forceRefreshItems = !!(wooOrderId && Number.isInteger(wooOrderId));
 
         let allOrders: any[] = [];
 
-        if (isFullSync) {
-            // Full sync: paginate through ALL orders
+        // Single order sync by WooCommerce ID (bulletproof: fetch that exact order)
+        if (wooOrderId && Number.isInteger(wooOrderId)) {
+            try {
+                const res = await woo.get(`orders/${wooOrderId}`);
+                const order = res.data;
+                if (order?.id) {
+                    allOrders = [order];
+                    console.log(`Single-order sync by ID: woo_id ${wooOrderId}, syncing...`);
+                } else {
+                    return NextResponse.json({ success: false, error: `Order ${wooOrderId} not found in WooCommerce` }, { status: 404 });
+                }
+            } catch (err: any) {
+                const status = err?.response?.status;
+                const data = err?.response?.data;
+                return NextResponse.json({
+                    success: false,
+                    error: status === 404 ? `Order ${wooOrderId} not found` : 'WooCommerce API error',
+                    details: data?.message || err?.message
+                }, { status: status === 404 ? 404 : 502 });
+            }
+        } else if (singleOrderNumber) {
+            const recent: any[] = [];
+            for (let p = 1; p <= 10; p++) {
+                const res = await woo.get('orders', { per_page: 100, page: p, order: 'desc', orderby: 'date' });
+                const chunk = res.data || [];
+                if (chunk.length === 0) break;
+                recent.push(...chunk);
+                if (chunk.length < 100) break;
+            }
+            const norm = (s: string) => s.replace(/^0+/, '') || s; // "0191" -> "191"
+            const match = recent.find((o: any) => {
+                let raw = o.number != null ? String(o.number).trim() : '';
+                if (!raw || raw === String(o.id)) {
+                    const meta = (o.meta_data || []) as Array<{ key?: string; value?: string }>;
+                    for (const m of meta) {
+                        const k = (m.key || '').toLowerCase();
+                        const v = m.value != null ? String(m.value).trim() : '';
+                        if (v && (k === '_order_number' || k === '_wc_order_number' || k === 'order_number' || k === '_sequential_order_number')) {
+                            raw = v;
+                            break;
+                        }
+                    }
+                }
+                const num = raw.replace(/^SUS[- ]?/i, '');
+                return norm(num) === norm(singleOrderNumber) || raw === singleOrderNumber || raw === `SUS-${singleOrderNumber}` || raw === `SUS ${singleOrderNumber}`;
+            });
+            if (match) {
+                allOrders = [match];
+                console.log(`Single-order sync: found order ${singleOrderNumber} (woo_id: ${match.id}), syncing...`);
+            } else {
+                return NextResponse.json({
+                    success: false,
+                    error: `Order ${singleOrderNumber} not found in WooCommerce (checked ${recent.length} most recent orders)`,
+                    checked: recent.length
+                }, { status: 404 });
+            }
+        } else if (isFullSync) {
+            // Full sync: paginate through ALL orders (any status); orderby=date so newest are last, we get every page
+            const maxPages = 100; // 100 * 100 = 10k orders max
             let page = 1;
-            while (true) {
+            while (page <= maxPages) {
                 console.log(`Full sync: fetching page ${page}...`);
                 const response = await woo.get('orders', {
+                    per_page: 100,
+                    page,
+                    order: 'asc',
+                    orderby: 'date'
+                });
+                const chunk = response.data || [];
+                if (chunk.length === 0) break;
+                allOrders = [...allOrders, ...chunk];
+                if (chunk.length < 100) break;
+                page++;
+            }
+            console.log(`Full sync: found ${allOrders.length} total orders (${page} pages)`);
+        } else {
+            // Quick sync: fetch orders after our last known order so we never miss new ones (e.g. 191)
+            let afterDate: string;
+            const { data: latestOrder } = await supabaseAdmin
+                .from('orders')
+                .select('created_at')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (latestOrder?.created_at) {
+                // Use last order's date minus 1 day so we don't miss same-day or timezone edge cases
+                const last = new Date(latestOrder.created_at);
+                last.setDate(last.getDate() - 1);
+                last.setHours(0, 0, 0, 0);
+                afterDate = last.toISOString();
+                console.log(`Quick sync: using after=${afterDate} (from last order in DB)`);
+            } else {
+                // No orders yet: use 30 days ago
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                afterDate = thirtyDaysAgo.toISOString();
+                console.log(`Quick sync: no orders in DB, using after=${afterDate}`);
+            }
+
+            let page = 1;
+            while (true) {
+                const response = await woo.get('orders', {
+                    after: afterDate,
                     per_page: 100,
                     page,
                     order: 'asc'
                 });
                 if (response.data.length === 0) break;
                 allOrders = [...allOrders, ...response.data];
+                if (response.data.length < 100) break;
                 page++;
             }
-            console.log(`Full sync: found ${allOrders.length} total orders`);
-        } else {
-            // Quick sync: last 7 days only
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            const afterDate = sevenDaysAgo.toISOString();
-            console.log(`Quick sync: pulling orders after ${afterDate}...`);
-            const response = await woo.get('orders', {
-                after: afterDate,
-                per_page: 100,
-                order: 'asc'
-            });
-            allOrders = response.data;
+            console.log(`Quick sync: pulled ${allOrders.length} orders after ${afterDate}`);
         }
 
         const orders = allOrders;
         let syncedCount = 0;
+        const syncedOrderNumbers: string[] = [];
+        const errors: { woo_order_id: number; order_number?: string; error: string }[] = [];
 
         for (const order of orders) {
             // Replicate Webhook parsing logic
@@ -137,7 +230,20 @@ export async function POST(req: NextRequest) {
             const statusChanged = existingOrder && existingOrder.status !== status;
 
             // Detect senior orders and tag the order number + set is_senior_order for distribution
-            let orderNumber = String(order.number);
+            // Order number: many stores use a plugin that stores "191" or "SUS-0191" in meta; API often returns order.number = post ID
+            let raw = order.number != null ? String(order.number).trim() : '';
+            if (!raw || raw === String(order.id)) {
+                const meta = (order.meta_data || []) as Array<{ key?: string; value?: string }>;
+                for (const m of meta) {
+                    const k = (m.key || '').toLowerCase();
+                    const v = m.value != null ? String(m.value).trim() : '';
+                    if (v && (k === '_order_number' || k === '_wc_order_number' || k === 'order_number' || k === '_sequential_order_number')) {
+                        raw = v;
+                        break;
+                    }
+                }
+            }
+            let orderNumber = /^\d+$/.test(raw) ? `SUS ${raw}` : (raw || `SUS ${order.id}`);
             const seniorKeywords = ['senior', 'year 6', 'yr 6'];
             let isSeniorOrder = false;
             if (orderNumber.includes('(SEN)') || (order.line_items && order.line_items.length > 0)) {
@@ -176,8 +282,10 @@ export async function POST(req: NextRequest) {
 
             if (orderError) {
                 console.error(`Error upserting order ${order.id}:`, orderError);
+                errors.push({ woo_order_id: order.id, order_number: orderNumber, error: orderError.message });
                 continue; // Skip items if order fails
             }
+            syncedOrderNumbers.push(orderNumber);
 
             // Sync items for: new orders OR orders that have no items (backfill)
             // NEVER delete existing items — only fill in missing ones
@@ -190,11 +298,11 @@ export async function POST(req: NextRequest) {
                 hasNoItems = (count ?? 0) === 0;
             }
 
-            if (isNew || hasNoItems) {
+            if (isNew || hasNoItems || forceRefreshItems) {
                 await supabaseAdmin.from('order_items').delete().eq('order_id', upsertedOrder.id);
 
                 if (order.line_items && order.line_items.length > 0) {
-                    const itemsToInsert = [];
+                    const itemsToInsert: any[] = [];
 
                     for (const item of order.line_items) {
                         let productId = null;
@@ -207,16 +315,16 @@ export async function POST(req: NextRequest) {
                             if (prod) productId = prod.id;
                         }
 
-                        // Extract size and nickname from line item meta_data
+                        // Extract size and nickname from line item meta_data (WooCommerce can use key, display_key, value, display_value)
                         let size = null;
                         let nickname: string | null = null;
                         if (item.meta_data && Array.isArray(item.meta_data)) {
                             for (const m of item.meta_data) {
-                                const k = (m.key || m.display_key || '').toString();
+                                const k = (m.key ?? m.display_key ?? '').toString().trim();
                                 const v = (m.value ?? m.display_value ?? '').toString().trim();
                                 if (k === 'pa_size' || k.toLowerCase().includes('size')) {
                                     if (v) size = v;
-                                } else if (k === 'Nickname' || k === 'pa_nickname' || k.toLowerCase() === 'nickname') {
+                                } else if (k.toLowerCase().includes('nickname')) {
                                     if (v) nickname = v;
                                 }
                             }
@@ -239,6 +347,7 @@ export async function POST(req: NextRequest) {
                         const { error: itemsError } = await supabaseAdmin.from('order_items').insert(itemsToInsert);
                         if (itemsError) {
                             console.error(`[Sync] Failed to insert items for order ${order.id}:`, itemsError.message, itemsError.details);
+                            errors.push({ woo_order_id: order.id, order_number: orderNumber, error: `Items: ${itemsError.message}` });
                         } else {
                             console.log(`[Sync] Inserted ${itemsToInsert.length} items for order #${orderNumber}`);
                         }
@@ -251,7 +360,12 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        return NextResponse.json({ success: true, count: syncedCount });
+        return NextResponse.json({
+            success: true,
+            count: syncedCount,
+            syncedOrderNumbers,
+            errors: errors.length ? errors : undefined
+        });
 
     } catch (error: any) {
         console.error('Pull Sync API Error:', error.response?.data || error);
