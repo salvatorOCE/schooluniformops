@@ -21,10 +21,14 @@ function StatusBadge({ status }: { status: string }) {
     );
 }
 
+function getOrderKey(order: OrderHistoryRecord, index: number): string {
+    return order.orderId ?? order.id ?? `order-${index}`;
+}
+
 export function HistoryList({ data, onOrderClick, selectedIds, onSelectionChange }: HistoryListProps) {
     const isSelectable = selectedIds != null && onSelectionChange != null;
-    const allSelected = isSelectable && data.length > 0 && data.every(o => selectedIds.has(o.orderId));
-    const someSelected = isSelectable && data.some(o => selectedIds.has(o.orderId));
+    const allSelected = isSelectable && data.length > 0 && data.every((o, i) => selectedIds.has(getOrderKey(o, i)));
+    const someSelected = isSelectable && data.some((o, i) => selectedIds.has(getOrderKey(o, i)));
 
     const toggleOne = (orderId: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -39,7 +43,7 @@ export function HistoryList({ data, onOrderClick, selectedIds, onSelectionChange
         e.stopPropagation();
         if (!onSelectionChange) return;
         if (allSelected) onSelectionChange(new Set());
-        else onSelectionChange(new Set(data.map(o => o.orderId)));
+        else onSelectionChange(new Set(data.map((o, i) => getOrderKey(o, i))));
     };
 
     if (data.length === 0) {
@@ -80,25 +84,27 @@ export function HistoryList({ data, onOrderClick, selectedIds, onSelectionChange
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                    {data.map((order) => (
+                    {data.map((order, index) => {
+                        const orderId = getOrderKey(order, index);
+                        return (
                         <tr
-                            key={order.orderId}
+                            key={orderId}
                             onClick={() => onOrderClick(order)}
-                            className={`group hover:bg-slate-50 cursor-pointer transition-colors ${isSelectable && selectedIds?.has(order.orderId) ? 'bg-emerald-50/50' : ''}`}
+                            className={`group hover:bg-slate-50 cursor-pointer transition-colors ${isSelectable && selectedIds?.has(orderId) ? 'bg-emerald-50/50' : ''}`}
                         >
                             {isSelectable && (
-                                <td className="px-2 py-2 md:px-4 md:py-3" onClick={(e) => toggleOne(order.orderId, e)}>
+                                <td className="px-2 py-2 md:px-4 md:py-3" onClick={(e) => toggleOne(orderId, e)}>
                                     <button
                                         type="button"
                                         className="w-5 h-5 flex items-center justify-center rounded border-2 border-slate-400 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold"
-                                        aria-label={selectedIds?.has(order.orderId) ? 'Deselect' : 'Select'}
+                                        aria-label={selectedIds?.has(orderId) ? 'Deselect' : 'Select'}
                                     >
-                                        {selectedIds?.has(order.orderId) ? '✓' : ''}
+                                        {selectedIds?.has(orderId) ? '✓' : ''}
                                     </button>
                                 </td>
                             )}
                             <td className="px-2 py-2 md:px-4 md:py-3 font-medium text-slate-900 group-hover:text-blue-600">
-                                {order.orderId}
+                                {orderId}
                                 {order.hasIssues && (
                                     <AlertTriangle className="inline w-3 h-3 text-amber-500 ml-1 md:ml-2" />
                                 )}
@@ -133,10 +139,11 @@ export function HistoryList({ data, onOrderClick, selectedIds, onSelectionChange
                                 </div>
                             </td>
                             <td className="px-2 py-2 md:px-4 md:py-3 text-right">
-                                <StatusBadge status={order.status} />
+                                <StatusBadge status={order.status ?? ''} />
                             </td>
                         </tr>
-                    ))}
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

@@ -128,7 +128,7 @@ function HistoryPageContent() {
     });
 
     // Sort by order date (paid or created), newest first – matches Dates column
-    const orderDate = (o: OrderHistoryRecord) => (o.paidAt || o.createdAt).getTime();
+    const orderDate = (o: OrderHistoryRecord) => (o.paidAt || o.createdAt || new Date()).getTime();
     const sortedOrders = [...filteredOrders].sort((a, b) => orderDate(b) - orderDate(a));
 
     return (

@@ -48,8 +48,8 @@ export function getStatusLabel(status: string): string {
     return status || 'Unknown';
 }
 
-export function getStatusColor(status: string): string {
-    const s = status.toLowerCase();
+export function getStatusColor(status: string | undefined): string {
+    const s = (status ?? '').toLowerCase();
     if (s.includes('processing')) return 'bg-green-100 text-green-700 border-green-200';
     if (s.includes('completed')) return 'bg-blue-100 text-blue-700 border-blue-200';
     if (s.includes('shipped')) return 'bg-purple-100 text-purple-700 border-purple-200';
