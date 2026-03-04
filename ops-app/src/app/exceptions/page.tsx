@@ -20,7 +20,7 @@ type Tab = 'EXCEPTIONS' | 'FIX_UPS' | 'HISTORY';
 
 export default function ExceptionsPage() {
     const adapter = useData();
-    const { role, schoolCode } = useSession();
+    const { role, schoolCode, loading: sessionLoading } = useSession();
     const { toast } = useToast();
     const [activeTab, setActiveTab] = useState<Tab>('EXCEPTIONS');
     const [exceptions, setExceptions] = useState<ExceptionOrder[]>([]);
@@ -35,6 +35,25 @@ export default function ExceptionsPage() {
 
     const loadData = async () => {
         setLoading(true);
+        const params = new URLSearchParams();
+        if (role === 'school' && schoolCode?.trim()) params.set('schoolCode', schoolCode.trim());
+        const query = params.toString();
+        const suffix = query ? `?${query}` : '';
+        try {
+            const [excRes, fixRes] = await Promise.all([
+                fetch(`/api/exceptions${suffix}`, { credentials: 'include' }),
+                fetch(`/api/fix-ups${suffix}`, { credentials: 'include' })
+            ]);
+            if (excRes.ok && fixRes.ok) {
+                const [excData, fixData] = await Promise.all([excRes.json(), fixRes.json()]);
+                setExceptions(Array.isArray(excData) ? excData : []);
+                setFixUps(Array.isArray(fixData) ? fixData : []);
+                setLoading(false);
+                return;
+            }
+        } catch {
+            // Fall through to adapter
+        }
         const [excData, fixData] = await Promise.all([
             adapter.getExceptions(),
             adapter.getFixUps()
@@ -50,9 +69,10 @@ export default function ExceptionsPage() {
     };
 
     useEffect(() => {
+        if (sessionLoading) return;
         loadData();
         loadEvents();
-    }, []);
+    }, [role, schoolCode, sessionLoading]);
 
     const isSchool = role === 'school' && schoolCode;
 

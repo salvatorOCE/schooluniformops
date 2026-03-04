@@ -20,7 +20,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const fetchSession = async () => {
     try {
-      const res = await fetch('/api/auth/session');
+      const res = await fetch('/api/auth/session', { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
       setRole(data.role ?? null);
       setSchoolCode(data.schoolCode ?? null);

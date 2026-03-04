@@ -48,7 +48,7 @@ export function HistoryProvider({ children, schoolCode }: HistoryProviderProps) 
             const params = new URLSearchParams();
             if (schoolCode?.trim()) params.set('schoolCode', schoolCode.trim());
             const [ordersRes, b, r] = await Promise.all([
-                fetch(`/api/orders/history?${params.toString()}`),
+                fetch(`/api/orders/history?${params.toString()}`, { credentials: 'include' }),
                 adapter.getHistoryBatches(),
                 adapter.getHistoryRuns()
             ]);
