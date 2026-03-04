@@ -54,14 +54,21 @@ export function HistoryProvider({ children, schoolCode }: HistoryProviderProps) 
             ]);
             let o: OrderHistoryRecord[] = [];
             if (ordersRes.ok) {
-                const raw = await ordersRes.json();
-                o = (Array.isArray(raw) ? raw : []).map((row: any) => ({
-                    ...row,
-                    createdAt: new Date(row.createdAt),
-                    updatedAt: new Date(row.updatedAt),
-                    paidAt: row.paidAt ? new Date(row.paidAt) : undefined,
-                    events: (row.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) })),
-                })) as OrderHistoryRecord[];
+                try {
+                    const raw = await ordersRes.json();
+                    o = (Array.isArray(raw) ? raw : []).map((row: any) => ({
+                        ...row,
+                        createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
+                        updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
+                        paidAt: row.paidAt ? new Date(row.paidAt) : undefined,
+                        events: (Array.isArray(row.events) ? row.events : []).map((e: any) => ({
+                            ...e,
+                            timestamp: e.timestamp ? new Date(e.timestamp) : new Date(),
+                        })),
+                    })) as OrderHistoryRecord[];
+                } catch (_) {
+                    o = [];
+                }
             }
             setOrders(o);
             setBatches(b);
