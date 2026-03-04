@@ -1,9 +1,11 @@
 # Build and deploy the ops-app (Next.js). In Netlify UI set Base directory to "ops-app".
 # Do not set "publish" — @netlify/plugin-nextjs sets it; overriding can break CSS/static assets.
+# Use build:netlify (next build --webpack): Next.js 16 defaults to Turbopack, whose output can 404
+# on Netlify; webpack output is fully compatible with @netlify/plugin-nextjs.
 
 [build]
   base = "ops-app"
-  command = "npm run build"
+  command = "npm run build:netlify"
 
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "WOO_URL,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
