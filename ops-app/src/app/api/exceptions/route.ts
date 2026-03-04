@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getSessionFromCookie } from '@/lib/session-server';
 import type { ExceptionOrder } from '@/lib/types';
 
 /**
@@ -8,6 +9,11 @@ import type { ExceptionOrder } from '@/lib/types';
  * Use this so school users get data on Netlify without relying on anon RLS.
  */
 export async function GET(req: NextRequest) {
+    const session = await getSessionFromCookie();
+    if (!session) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     if (!supabaseAdmin) {
         return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
     }

@@ -20,6 +20,7 @@ export async function POST(request: Request) {
     // Admin: single input matches LOGIN_CODE (env only; do not use DB for admin)
     if (value === LOGIN_CODE) {
       const res = NextResponse.json({ success: true, role: 'admin' });
+      // Do not set domain so cookie is scoped to current host (e.g. schooluniformops.netlify.app)
       res.cookies.set(COOKIE_NAME, COOKIE_ADMIN, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       const match = await bcrypt.compare(value, credential.password_hash);
       if (match) {
         const res = NextResponse.json({ success: true, role: 'school', schoolCode });
+        // Do not set domain so cookie is scoped to current host (e.g. schooluniformops.netlify.app)
         res.cookies.set(COOKIE_NAME, `school:${schoolCode}`, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getSessionFromCookie } from '@/lib/session-server';
 import WooCommerceRestApi from '@woocommerce/woocommerce-rest-api';
 
 /**
@@ -17,6 +18,11 @@ function getWooClient() {
 }
 
 export async function POST() {
+    const session = await getSessionFromCookie();
+    if (!session) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     if (!supabaseAdmin) {
         return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }

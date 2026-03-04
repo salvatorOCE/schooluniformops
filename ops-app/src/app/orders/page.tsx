@@ -52,6 +52,8 @@ function HistoryPageContent() {
         return parts.join(', ');
     }
 
+    const { refetch: refetchSession } = useSession();
+
     // Quick sync from WooCommerce (pull new/updated orders), then refresh list
     const runWooSync = useCallback(async () => {
         if (syncInProgress.current) return;
@@ -60,8 +62,14 @@ function HistoryPageContent() {
             const res = await fetch('/api/woo/pull-sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fullSync: false })
+                body: JSON.stringify({ fullSync: false }),
+                credentials: 'include',
             });
+            if (res.status === 401 || res.redirected) {
+                toast.error('Session expired – please sign in again');
+                await refetchSession();
+                return;
+            }
             const data = await res.json().catch(() => ({}));
             if (data.success) {
                 setLastSyncedAt(new Date());
@@ -76,7 +84,7 @@ function HistoryPageContent() {
             syncInProgress.current = false;
             setFirstSyncDone(true);
         }
-    }, [refresh, toast]);
+    }, [refresh, toast, refetchSession]);
 
     // On mount: sync first so refresh = latest from Woo, then list pops up
     useEffect(() => {
@@ -147,13 +155,24 @@ function HistoryPageContent() {
                                         const syncRes = await fetch('/api/woo/pull-sync', {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ fullSync: true })
+                                            body: JSON.stringify({ fullSync: true }),
+                                            credentials: 'include',
                                         });
+                                        if (syncRes.status === 401 || syncRes.redirected) {
+                                            toast.error('Session expired – please sign in again');
+                                            await refetchSession();
+                                            return;
+                                        }
                                         const syncData = await syncRes.json().catch(() => ({}));
                                         if (!syncRes.ok) throw new Error(syncData.error || 'Sync failed');
 
                                         // 2. Backfill created_at/paid_at for all orders we have
-                                        const datesRes = await fetch('/api/woo/backfill-order-dates', { method: 'POST' });
+                                        const datesRes = await fetch('/api/woo/backfill-order-dates', { method: 'POST', credentials: 'include' });
+                                        if (datesRes.status === 401 || datesRes.redirected) {
+                                            toast.error('Session expired – please sign in again');
+                                            await refetchSession();
+                                            return;
+                                        }
                                         const datesData = await datesRes.json().catch(() => ({}));
                                         if (!datesRes.ok) throw new Error(datesData.error || 'Backfill failed');
 
@@ -299,7 +318,7 @@ function HistoryPageContent() {
                                                 const orderKey = order.id || order.orderId;
                                                 if (!orderKey) return { ...order } as OrderDocketRow;
                                                 try {
-                                                    const res = await fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`);
+                                                    const res = await fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`, { credentials: 'include' });
                                                     if (!res.ok) return { ...order } as OrderDocketRow;
                                                     const woo = await res.json();
                                                     const billing = woo.billing;

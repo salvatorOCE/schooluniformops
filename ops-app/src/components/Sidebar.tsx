@@ -91,8 +91,8 @@ export function Sidebar() {
     const { isMobile } = useMobile();
     const adapter = useData();
     const { role, schoolCode, loading: sessionLoading } = useSession();
-    // While session is loading, show school (restricted) nav so school users never see a flash of admin modules
-    const isSchool = sessionLoading || role === 'school';
+    // Only show school nav when we know user is school; while loading show neutral state to avoid admin phantom
+    const isSchool = !sessionLoading && role === 'school';
     const [recoveryCount, setRecoveryCount] = useState(0);
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean, message: string } | null>(null);
@@ -108,9 +108,14 @@ export function Sidebar() {
             const res = await fetch('/api/woo/pull-sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fullSync })
+                body: JSON.stringify({ fullSync }),
+                credentials: 'include',
             });
-            const data = await res.json();
+            if (res.status === 401 || res.redirected) {
+                setSyncResult({ success: false, message: 'Session expired – please sign in again' });
+                return;
+            }
+            const data = await res.json().catch(() => ({}));
             if (data.success) {
                 setSyncResult({
                     success: true,
@@ -189,10 +194,12 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 px-3 py-6 flex flex-col overflow-y-auto">
                 <div className="px-3 mb-2 text-[10px] font-bold text-emerald-500/80 uppercase tracking-widest">
-                    {isSchool ? 'School view' : 'Modules'}
+                    {sessionLoading ? '' : isSchool ? 'School view' : 'Modules'}
                 </div>
                 <div className="space-y-1">
-                    {(isSchool ? schoolNavItems : mainNavItems).map((item) => {
+                    {sessionLoading ? (
+                        <div className="px-3 py-2.5 text-emerald-200/80 text-sm animate-pulse">Loading…</div>
+                    ) : (isSchool ? schoolNavItems : mainNavItems).map((item) => {
                         const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
                         const isRecovery = item.href === '/exceptions';
                         const showBadge = isRecovery && recoveryCount > 0;
@@ -226,8 +233,8 @@ export function Sidebar() {
                     })}
                 </div>
 
-                {/* Work in progress — bottom section (admin only) */}
-                {!isSchool && (
+                {/* Work in progress — bottom section (admin only); hide while session loading */}
+                {!sessionLoading && !isSchool && (
                 <div className="mt-auto pt-6 pb-2">
                     <div className="px-3 mb-2 text-[10px] font-bold text-amber-500/70 uppercase tracking-widest">Work in progress</div>
                     <div className="space-y-1">

@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Monitor } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
 
 export function MobileSimulator({ children }: { children: React.ReactNode }) {
-    const { isSimulating, setIsSimulating } = useMobile();
+    const { isSimulating } = useMobile();
     const [isClient, setIsClient] = useState(false);
 
     useEffect(() => {
@@ -33,24 +32,6 @@ export function MobileSimulator({ children }: { children: React.ReactNode }) {
 
                 {children}
             </div>
-
-            {/* Toggle Button */}
-            <button
-                onClick={() => setIsSimulating(!isSimulating)}
-                className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-3 rounded-full shadow-lg hover:bg-slate-800 transition-all font-medium text-sm"
-            >
-                {isSimulating ? (
-                    <>
-                        <Monitor className="w-5 h-5" />
-                        Exit Simulator
-                    </>
-                ) : (
-                    <>
-                        <Smartphone className="w-5 h-5" />
-                        Simulate Mobile
-                    </>
-                )}
-            </button>
         </div>
     );
 }

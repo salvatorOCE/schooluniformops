@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getSessionFromCookie } from '@/lib/session-server';
 import WooCommerceRestApi from "@woocommerce/woocommerce-rest-api";
 
 // Initialize WooCommerce API
@@ -19,6 +20,11 @@ const startWoo = () => {
 };
 
 export async function POST(req: NextRequest) {
+    const session = await getSessionFromCookie();
+    if (!session) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     if (!supabaseAdmin) {
         return NextResponse.json({ error: 'Supabase Admin not configured' }, { status: 500 });
     }

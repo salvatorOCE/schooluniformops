@@ -24,12 +24,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = request.cookies.get(COOKIE_NAME)?.value;
-
-  // Allow API routes for authenticated users (school users need order-details, product-images, etc.)
-  if (pathname.startsWith('/api/') && session) {
+  // Allow all API routes through; APIs that need auth return 401 JSON when session is missing
+  if (pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
+
+  const session = request.cookies.get(COOKIE_NAME)?.value;
 
   // School users (non-admin): only allow Orders, Recovery Center, Product list
   const schoolAllowed = ['/orders', '/exceptions', '/products'];
