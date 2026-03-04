@@ -1,14 +1,13 @@
 # Netlify build for Next.js (ops-app)
-# If your repo root is the ops-app folder, this is correct.
-# If repo root is the parent (e.g. School Uniform Solutions), set Base directory to "ops-app" in Netlify UI.
+# If repo root is the parent (e.g. School Uniform Solutions), the root netlify.toml is used (base = "ops-app").
+# Do NOT set "publish" here — @netlify/plugin-nextjs controls it; setting publish breaks CSS/JS on deploy.
 
 [build]
   command = "npm run build"
-  publish = ".next"
 
-# Allow build to succeed: NEXT_PUBLIC_* and WOO_URL are inlined at build time; omit from secrets scan.
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "WOO_URL,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
+  NODE_VERSION = "20"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
