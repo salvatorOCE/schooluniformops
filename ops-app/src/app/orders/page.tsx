@@ -27,6 +27,7 @@ function HistoryPageContent() {
     const { orders, batches, runs, refresh } = useHistory();
     const adapter = useData();
     const { toast } = useToast();
+    const { role } = useSession();
     const [syncingDates, setSyncingDates] = useState(false);
     const [activeTab, setActiveTab] = useState<'ORDERS' | 'BATCHES' | 'RUNS'>('ORDERS');
     const [selectedOrder, setSelectedOrder] = useState<OrderHistoryRecord | null>(null);
@@ -36,6 +37,7 @@ function HistoryPageContent() {
     const [bulkUpdating, setBulkUpdating] = useState(false);
     const [docketLoading, setDocketLoading] = useState(false);
     const syncInProgress = useRef(false);
+    const [firstSyncDone, setFirstSyncDone] = useState(false);
 
     function formatWooAddress(addr: { first_name?: string; last_name?: string; company?: string; address_1?: string; address_2?: string; city?: string; state?: string; postcode?: string; country?: string } | undefined): string {
         if (!addr) return '';
@@ -69,13 +71,14 @@ function HistoryPageContent() {
                 }
             }
         } catch {
-            // Silent in background; user can use manual sync
+            // Silent in background
         } finally {
             syncInProgress.current = false;
+            setFirstSyncDone(true);
         }
     }, [refresh, toast]);
 
-    // On mount: sync once so new orders appear without clicking Sync
+    // On mount: sync first so refresh = latest from Woo, then list pops up
     useEffect(() => {
         runWooSync();
     }, []); // eslint-disable-line react-hooks/exhaustive-deps -- run once on mount
@@ -179,10 +182,10 @@ function HistoryPageContent() {
                                     }
                                 }}
                                 disabled={syncingDates}
-                                className="flex items-center w-fit gap-1.5 px-3 py-1.5 md:px-4 md:py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs md:text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors shadow-sm disabled:opacity-60"
+                                className="flex items-center w-fit gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors disabled:opacity-60"
                             >
-                                <RefreshCw className={`w-4 h-4 ${syncingDates ? 'animate-spin' : ''}`} />
-                                {syncingDates ? 'Syncing…' : 'Sync from Woo'}
+                                <RefreshCw className={`w-3.5 h-3.5 ${syncingDates ? 'animate-spin' : ''}`} />
+                                {syncingDates ? 'Syncing…' : 'Sync again'}
                             </button>
                                 </>
                         )}
@@ -229,6 +232,14 @@ function HistoryPageContent() {
             {/* Content Area */}
             {activeTab === 'ORDERS' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    {!firstSyncDone ? (
+                        <div className="flex flex-col items-center justify-center py-16 px-4 bg-slate-50 border border-slate-200 rounded-lg">
+                            <RefreshCw className="w-10 h-10 text-slate-400 animate-spin mb-3" />
+                            <p className="text-slate-600 font-medium">Loading latest orders…</p>
+                            <p className="text-slate-500 text-sm mt-1">Syncing from WooCommerce so item counts and details are up to date.</p>
+                        </div>
+                    ) : (
+                        <>
                     <HistoryFilterBar filters={filters} onFilterChange={setFilters} />
                     {selectedIds.size > 0 && (
                         <div className="flex flex-wrap items-center gap-3 py-3 px-4 bg-slate-50 border border-slate-200 rounded-lg mb-3">
@@ -293,10 +304,12 @@ function HistoryPageContent() {
                                                     const woo = await res.json();
                                                     const billing = woo.billing;
                                                     const shipping = woo.shipping;
+                                                    const isSchool = role === 'school';
                                                     return {
                                                         ...order,
-                                                        phone: billing?.phone ?? billing?.email ?? null,
-                                                        billingAddress: formatWooAddress(billing) || undefined,
+                                                        phone: billing?.phone ?? null,
+                                                        email: billing?.email ?? null,
+                                                        billingAddress: isSchool ? undefined : (formatWooAddress(billing) || undefined),
                                                         shippingAddress: formatWooAddress(shipping) || undefined,
                                                         additionalInfo: woo.customer_note?.trim() || undefined,
                                                     } as OrderDocketRow;
@@ -333,6 +346,8 @@ function HistoryPageContent() {
                         selectedIds={selectedIds}
                         onSelectionChange={setSelectedIds}
                     />
+                        </>
+                    )}
                 </div>
             )}
 

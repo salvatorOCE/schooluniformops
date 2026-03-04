@@ -1559,10 +1559,10 @@ export class SupabaseAdapter implements DataAdapter {
             const rawItems = Array.isArray(o.order_items) ? o.order_items : [];
             const items = rawItems.map((i: any) => ({
                 itemId: i.id,
-                sku: i.sku,
-                productName: i.name,
+                sku: i.sku ?? '',
+                productName: i.name ?? 'Unknown',
                 size: i.size || 'N/A',
-                qty: i.quantity,
+                qty: typeof i.quantity === 'number' ? i.quantity : Number(i.quantity) || 1,
                 status: i.embroidery_status === 'DONE' ? 'PACKED' : (i.requires_embroidery ? 'PENDING' : 'PACKED')
             })) as import('./types').OrderHistoryItem[];
 

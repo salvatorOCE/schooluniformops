@@ -36,19 +36,19 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ items: [] });
         }
 
-        // Load order items with product woocommerce_id (schema uses woocommerce_id)
+        // Load order items in insert order (created_at) so index matches WooCommerce line_items
         const { data: orderRows, error: orderError } = await supabaseAdmin
             .from('order_items')
             .select('id, product_id, name, sku')
-            .eq('order_id', orderUuid);
+            .eq('order_id', orderUuid)
+            .order('created_at', { ascending: true });
 
         if (orderError || !orderRows?.length) {
             return NextResponse.json({ items: [] });
         }
 
         const productIds = [...new Set(orderRows.map((r: any) => r.product_id).filter(Boolean))] as string[];
-        let productIdToWooId = new Map<string, number>();
-
+        const productIdToWooId = new Map<string, number>();
         if (productIds.length > 0) {
             const { data: products } = await supabaseAdmin
                 .from('products')
@@ -60,32 +60,31 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        // When no products linked in DB (e.g. shorts not in products table), fetch Woo order and use line_item product_id for images
+        // Always fetch Woo order so we have line_items order and can show images for every item (including when product_id is null)
         let wooOrderLineItems: { product_id: number }[] = [];
-        if (productIdToWooId.size === 0) {
-            const { data: orderRow } = await supabaseAdmin
-                .from('orders')
-                .select('woo_order_id')
-                .eq('id', orderUuid)
-                .single();
-            const wooOrderId = (orderRow as any)?.woo_order_id;
-            if (wooOrderId != null) {
-                try {
-                    const res = await woo.get(`orders/${wooOrderId}`);
-                    const wooOrder = res.data as any;
-                    wooOrderLineItems = (wooOrder?.line_items || []).map((li: any) => ({ product_id: Number(li.product_id || 0) }));
-                } catch (_) {
-                    // ignore
-                }
+        const { data: orderRow } = await supabaseAdmin
+            .from('orders')
+            .select('woo_order_id')
+            .eq('id', orderUuid)
+            .single();
+        const wooOrderId = (orderRow as any)?.woo_order_id;
+        if (wooOrderId != null) {
+            try {
+                const res = await woo.get(`orders/${wooOrderId}`);
+                const wooOrder = res.data as any;
+                wooOrderLineItems = (wooOrder?.line_items || []).map((li: any) => ({ product_id: Number(li.product_id || 0) }));
+            } catch (_) {
+                // ignore
             }
         }
 
         const wooIds = productIdToWooId.size > 0
             ? [...productIdToWooId.values()]
             : wooOrderLineItems.map(li => li.product_id).filter(Boolean);
+        const allWooIds = [...new Set([...wooIds, ...wooOrderLineItems.map(li => li.product_id).filter(Boolean)])];
         const imageByWooId = new Map<number, { front: string | null; back: string | null }>();
 
-        for (const wooId of [...new Set(wooIds)]) {
+        for (const wooId of allWooIds) {
             if (!wooId) continue;
             try {
                 const res = await woo.get(`products/${wooId}`);

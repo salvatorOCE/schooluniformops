@@ -23,6 +23,7 @@ const BRAND = {
 /** Enriched order row for the docket (optional fields from WooCommerce) */
 export interface OrderDocketRow extends OrderHistoryRecord {
   phone?: string | null;
+  email?: string | null;
   billingAddress?: string | null;
   shippingAddress?: string | null;
   /** Customer note / additional info from WooCommerce checkout */
@@ -161,6 +162,10 @@ export function downloadOrderDocketPdf(orders: OrderDocketRow[], filename?: stri
 
     if (order.billingAddress?.trim()) {
       line('Billing', order.billingAddress.trim());
+    }
+    const contactParts = [order.phone?.trim(), order.email?.trim()].filter(Boolean);
+    if (contactParts.length) {
+      line('Contact', contactParts.join(' • '));
     }
 
     if (order.additionalInfo?.trim()) {

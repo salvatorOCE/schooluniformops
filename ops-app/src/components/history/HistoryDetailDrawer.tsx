@@ -1,7 +1,7 @@
 'use client';
 
 import { OrderHistoryRecord } from '@/lib/types';
-import { X, User, ShoppingBag, Truck, ImageIcon, Calendar, CreditCard, MapPin, FileText, Mail, Phone, MessageSquare, Send } from 'lucide-react';
+import { X, User, ShoppingBag, Truck, ImageIcon, Calendar, CreditCard, MapPin, FileText, Mail, Phone, MessageSquare, Send, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { OrderTimeline } from './OrderTimeline';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
@@ -10,7 +10,7 @@ import { useToast } from '@/lib/toast-context';
 import { useHistory } from '@/lib/history-context';
 import { useSession } from '@/lib/session-context';
 import { SystemEvent } from '@/lib/types';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 interface OrderNote {
   id: string;
@@ -105,6 +105,46 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
     const [notesLoading, setNotesLoading] = useState(false);
     const [newNote, setNewNote] = useState('');
     const [savingNote, setSavingNote] = useState(false);
+    const [refreshingItems, setRefreshingItems] = useState(false);
+    const autoRefreshedOrderId = useRef<string | null>(null);
+
+    // When opening an order with 0 items, auto backfill from Woo so items and photos appear without clicking the button
+    useEffect(() => {
+        if (!order?.orderId || order.items.length > 0) return;
+        if (autoRefreshedOrderId.current === order.orderId) return;
+        autoRefreshedOrderId.current = order.orderId;
+        const orderNum = (order.orderId || '').replace(/^SUS[- ]?/i, '').trim();
+        if (!orderNum) return;
+        setRefreshingItems(true);
+        fetch('/api/woo/pull-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderNumber: orderNum }),
+        })
+            .then((res) => res.json().catch(() => ({})))
+            .then((data: any) => {
+                if (data?.success) {
+                    refresh().then(() => {
+                        onNoteAdded?.();
+                        const orderKey = order.id || order.orderId;
+                        if (orderKey) {
+                            Promise.all([
+                                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : null)),
+                                fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : { items: [] })),
+                            ]).then(([wooRes, imgRes]) => {
+                                setWooOrder(wooRes || null);
+                                const map: Record<string, { front: string | null; back: string | null }> = {};
+                                ((imgRes as any)?.items || []).forEach((row: any) => {
+                                    map[row.order_item_id] = { front: row.image_front_url ?? null, back: row.image_back_url ?? null };
+                                });
+                                setItemImages(map);
+                            });
+                        }
+                    });
+                }
+            })
+            .finally(() => setRefreshingItems(false));
+    }, [order?.orderId, order?.items?.length, order?.id, refresh, onNoteAdded]);
 
     useEffect(() => {
         if (order) {
@@ -171,6 +211,44 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
             e.target.value = currentStatus;
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    const handleRefreshItemsFromWoo = async () => {
+        const orderNum = (order?.orderId || '').replace(/^SUS[- ]?/i, '').trim();
+        if (!orderNum) return;
+        setRefreshingItems(true);
+        try {
+            const res = await fetch('/api/woo/pull-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderNumber: orderNum }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                toast.error(data.error || 'Refresh failed');
+                return;
+            }
+            toast.success('Items synced from WooCommerce. Refreshing…');
+            await refresh();
+            onNoteAdded?.();
+            const orderKey = order?.id || order?.orderId;
+            if (orderKey) {
+                const [wooRes, imgRes] = await Promise.all([
+                    fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : null)),
+                    fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : { items: [] })),
+                ]);
+                setWooOrder(wooRes || null);
+                const map: Record<string, { front: string | null; back: string | null }> = {};
+                ((imgRes as any)?.items || []).forEach((row: any) => {
+                    map[row.order_item_id] = { front: row.image_front_url ?? null, back: row.image_back_url ?? null };
+                });
+                setItemImages(map);
+            }
+        } catch (e: any) {
+            toast.error(e.message || 'Refresh failed');
+        } finally {
+            setRefreshingItems(false);
         }
     };
 
@@ -243,7 +321,18 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                 <div className="flex-1 overflow-y-auto p-6 space-y-8">
                     {/* Order Items first (with photos) */}
                     <section>
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Order items</h3>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Order items</h3>
+                            <button
+                                type="button"
+                                onClick={handleRefreshItemsFromWoo}
+                                disabled={refreshingItems}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-60"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${refreshingItems ? 'animate-spin' : ''}`} />
+                                {refreshingItems ? 'Syncing…' : 'Refresh items from Woo'}
+                            </button>
+                        </div>
                         <div className="space-y-4">
                             {(wooOrder?.line_items && wooOrder.line_items.length > 0 ? wooOrder.line_items : order.items.map((item, idx) => ({ id: idx, name: item.productName, sku: item.sku, quantity: item.qty, size: item.size, itemId: item.itemId }))).map((item: any, idx: number) => {
                                 const qty = item.quantity ?? item.qty;
@@ -330,33 +419,52 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                         </div>
                     </section>
 
-                    {/* Billing */}
-                    <section>
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
-                            <MapPin className="w-4 h-4" /> Billing address
-                        </h3>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 whitespace-pre-line">
-                            {wooOrder?.billing ? (
-                                <>
-                                    {formatAddress(wooOrder.billing)}
-                                    {(wooOrder.billing.email || wooOrder.billing.phone) && (
-                                        <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
-                                            {wooOrder.billing.email && (
-                                                <p className="flex items-center gap-1"><Mail className="w-3 h-3" /> {wooOrder.billing.email}</p>
-                                            )}
-                                            {wooOrder.billing.phone && (
-                                                <p className="flex items-center gap-1"><Phone className="w-3 h-3" /> {wooOrder.billing.phone}</p>
-                                            )}
-                                        </div>
+                    {/* Billing address (admin only); school users see only contact (email/phone) below */}
+                    {role !== 'school' ? (
+                        <section>
+                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <MapPin className="w-4 h-4" /> Billing address
+                            </h3>
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 whitespace-pre-line">
+                                {wooOrder?.billing ? (
+                                    <>
+                                        {formatAddress(wooOrder.billing)}
+                                        {(wooOrder.billing.email || wooOrder.billing.phone) && (
+                                            <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
+                                                {wooOrder.billing.email && (
+                                                    <p className="flex items-center gap-1"><Mail className="w-3 h-3" /> {wooOrder.billing.email}</p>
+                                                )}
+                                                {wooOrder.billing.phone && (
+                                                    <p className="flex items-center gap-1"><Phone className="w-3 h-3" /> {wooOrder.billing.phone}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : wooLoading ? (
+                                    <p className="text-slate-500">Loading…</p>
+                                ) : (
+                                    '—'
+                                )}
+                            </div>
+                        </section>
+                    ) : (
+                        /* School users: contact only (no billing address) */
+                        (wooOrder?.billing?.email || wooOrder?.billing?.phone) && (
+                            <section>
+                                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Mail className="w-4 h-4" /> Contact
+                                </h3>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 space-y-1">
+                                    {wooOrder.billing.email && (
+                                        <p className="flex items-center gap-1"><Mail className="w-3 h-3" /> {wooOrder.billing.email}</p>
                                     )}
-                                </>
-                            ) : wooLoading ? (
-                                <p className="text-slate-500">Loading…</p>
-                            ) : (
-                                '—'
-                            )}
-                        </div>
-                    </section>
+                                    {wooOrder.billing.phone && (
+                                        <p className="flex items-center gap-1"><Phone className="w-3 h-3" /> {wooOrder.billing.phone}</p>
+                                    )}
+                                </div>
+                            </section>
+                        )
+                    )}
 
                     {/* Shipping */}
                     <section>

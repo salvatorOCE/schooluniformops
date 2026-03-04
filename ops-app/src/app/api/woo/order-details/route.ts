@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveOrderUuid } from '@/lib/woo-utils';
 import WooCommerceRestApi from '@woocommerce/woocommerce-rest-api';
+
+const OPS_SESSION_COOKIE = 'ops_session';
+
+function isSchoolUser(sessionValue: string | undefined): boolean {
+    if (!sessionValue) return false;
+    return sessionValue.startsWith('school:');
+}
 
 function getWooClient() {
     const url = process.env.WOO_URL;
@@ -49,6 +57,18 @@ export async function GET(req: NextRequest) {
         const order = response.data;
         if (!order) {
             return NextResponse.json({ error: 'WooCommerce order not found' }, { status: 404 });
+        }
+
+        // School users: strip billing address only; keep email and phone for contact
+        const cookieStore = await cookies();
+        const session = cookieStore.get(OPS_SESSION_COOKIE)?.value;
+        if (isSchoolUser(session) && order) {
+            const o = order as { billing?: { email?: string; phone?: string; [k: string]: unknown }; [k: string]: unknown };
+            const billing = o.billing;
+            const sanitizedBilling = billing
+                ? { email: billing.email ?? undefined, phone: billing.phone ?? undefined }
+                : undefined;
+            return NextResponse.json({ ...o, billing: sanitizedBilling });
         }
 
         return NextResponse.json(order);

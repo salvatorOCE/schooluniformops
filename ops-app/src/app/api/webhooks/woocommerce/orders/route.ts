@@ -153,6 +153,8 @@ export async function POST(request: Request) {
                     nickname: nickname,
                     unit_price: parseFloat(item.price) || 0,
                     total_price: parseFloat(item.total) || 0,
+                    requires_embroidery: false,
+                    embroidery_status: 'NA',
                 });
             }
 

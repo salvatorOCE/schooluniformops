@@ -161,6 +161,7 @@ export async function POST(req: NextRequest) {
         let syncedCount = 0;
         const syncedOrderNumbers: string[] = [];
         const errors: { woo_order_id: number; order_number?: string; error: string }[] = [];
+        const itemsSynced: { orderNumber: string; itemsWritten: number }[] = [];
 
         for (const order of orders) {
             // Replicate Webhook parsing logic
@@ -301,10 +302,29 @@ export async function POST(req: NextRequest) {
             if (isNew || hasNoItems || forceRefreshItems) {
                 await supabaseAdmin.from('order_items').delete().eq('order_id', upsertedOrder.id);
 
-                if (order.line_items && order.line_items.length > 0) {
+                // Always fetch full order from Woo when writing items – list endpoint often omits or truncates line_items
+                let lineItems: any[] = [];
+                if (order.id) {
+                    try {
+                        const fullRes = await woo.get(`orders/${order.id}`);
+                        const fullOrder = fullRes.data as any;
+                        lineItems = fullOrder?.line_items || [];
+                        if (lineItems.length > 0) {
+                            console.log(`[Sync] Order #${orderNumber}: using ${lineItems.length} line_items from full order`);
+                        }
+                    } catch (err: any) {
+                        console.warn(`[Sync] Order #${orderNumber}: could not fetch full order (${err?.message}), using list payload`);
+                        lineItems = order.line_items || [];
+                    }
+                }
+                if (lineItems.length === 0) {
+                    lineItems = order.line_items || [];
+                }
+
+                if (lineItems.length > 0) {
                     const itemsToInsert: any[] = [];
 
-                    for (const item of order.line_items) {
+                    for (const item of lineItems) {
                         let productId = null;
                         if (item.product_id) {
                             const { data: prod } = await supabaseAdmin
@@ -340,6 +360,8 @@ export async function POST(req: NextRequest) {
                             nickname: nickname,
                             unit_price: parseFloat(item.price) || 0,
                             total_price: parseFloat(item.total) || 0,
+                            requires_embroidery: false,
+                            embroidery_status: 'NA',
                         });
                     }
 
@@ -350,6 +372,9 @@ export async function POST(req: NextRequest) {
                             errors.push({ woo_order_id: order.id, order_number: orderNumber, error: `Items: ${itemsError.message}` });
                         } else {
                             console.log(`[Sync] Inserted ${itemsToInsert.length} items for order #${orderNumber}`);
+                            if (itemsSynced.length < 20) {
+                                itemsSynced.push({ orderNumber, itemsWritten: itemsToInsert.length });
+                            }
                         }
                     }
                 }
@@ -364,6 +389,7 @@ export async function POST(req: NextRequest) {
             success: true,
             count: syncedCount,
             syncedOrderNumbers,
+            itemsSynced: itemsSynced.length ? itemsSynced : undefined,
             errors: errors.length ? errors : undefined
         });
 

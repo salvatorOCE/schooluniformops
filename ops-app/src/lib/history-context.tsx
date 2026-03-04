@@ -45,11 +45,24 @@ export function HistoryProvider({ children, schoolCode }: HistoryProviderProps) 
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const [o, b, r] = await Promise.all([
-                adapter.getHistoryOrders(schoolCode ?? undefined),
+            const params = new URLSearchParams();
+            if (schoolCode?.trim()) params.set('schoolCode', schoolCode.trim());
+            const [ordersRes, b, r] = await Promise.all([
+                fetch(`/api/orders/history?${params.toString()}`),
                 adapter.getHistoryBatches(),
                 adapter.getHistoryRuns()
             ]);
+            let o: OrderHistoryRecord[] = [];
+            if (ordersRes.ok) {
+                const raw = await ordersRes.json();
+                o = (Array.isArray(raw) ? raw : []).map((row: any) => ({
+                    ...row,
+                    createdAt: new Date(row.createdAt),
+                    updatedAt: new Date(row.updatedAt),
+                    paidAt: row.paidAt ? new Date(row.paidAt) : undefined,
+                    events: (row.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) })),
+                })) as OrderHistoryRecord[];
+            }
             setOrders(o);
             setBatches(b);
             setRuns(r);
