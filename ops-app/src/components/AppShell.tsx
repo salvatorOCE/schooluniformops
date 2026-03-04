@@ -4,6 +4,7 @@ import React from 'react';
 import { useMobile } from '@/lib/mobile-context';
 import { MobileHeader } from './MobileHeader';
 import { Sidebar } from './Sidebar';
+import { EnvBanner } from './EnvBanner';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const { isMobile } = useMobile();
@@ -13,6 +14,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <MobileHeader />
             <Sidebar />
             <main className={`flex-1 overflow-y-auto w-full animate-in relative ${isMobile ? 'px-0 py-2 sm:p-4' : 'p-8'}`}>
+                <EnvBanner />
                 {children}
             </main>
         </div>
