@@ -20,7 +20,8 @@ import {
     Search,
     LogOut,
     StickyNote,
-    ListOrdered
+    ListOrdered,
+    Building2
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
@@ -61,6 +62,7 @@ export const navItems: NavItem[] = [
     { href: '/ai-bot', label: 'AI Assistant', icon: Bot },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
     { href: '/products', label: 'All Products', icon: ListOrdered },
+    { href: '/schools', label: 'All Schools', icon: Building2 },
     { href: '/tracking', label: 'Order Tracking', icon: Search },
 ];
 
@@ -75,6 +77,7 @@ export const mainNavItems: NavItem[] = [
     { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
     { href: '/products', label: 'All Products', icon: ListOrdered },
+    { href: '/schools', label: 'All Schools', icon: Building2 },
 ];
 
 /** Work in progress (bottom section) */
@@ -183,7 +186,7 @@ export function Sidebar() {
     if (isMobile) return null;
 
     return (
-        <aside className="w-64 min-h-screen flex flex-col z-20 bg-[#002D2B] text-white border-r border-[#004440] shadow-xl">
+        <aside className="w-64 h-screen sticky top-0 self-start flex-shrink-0 flex flex-col z-20 bg-[#002D2B] text-white border-r border-[#004440] shadow-xl">
             {/* Brand Header — light green banner, logo fills height */}
             <div className="px-3 py-0 flex items-stretch border-b border-emerald-200 bg-emerald-100 h-[125px] min-h-[125px]">
                 <Link href="/" className="flex items-stretch w-full">

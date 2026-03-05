@@ -455,13 +455,14 @@ export default function DigitalStock() {
         if (!newSchoolName?.trim() || !newSchoolCode?.trim()) return;
         setAddingSchool(true);
         try {
-            await adapter.createSchool(newSchoolName.trim(), newSchoolCode.trim());
+            const created = await adapter.createSchool(newSchoolName.trim(), newSchoolCode.trim());
             showToast('success', `Added "${newSchoolName}"`);
             setShowAddSchool(false);
             setNewSchoolName('');
             setNewSchoolCode('');
             await loadSchools();
             await loadStock();
+            if (showAddProduct) setNewProductSchoolId(created.id);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to add school';
             showToast('error', msg);
@@ -1096,7 +1097,16 @@ export default function DigitalStock() {
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School</label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddSchool(true)}
+                                        className="text-blue-600 hover:text-blue-700 text-xs font-medium"
+                                    >
+                                        + Create new school
+                                    </button>
+                                </div>
                                 <select
                                     value={newProductSchoolId}
                                     onChange={(e) => setNewProductSchoolId(e.target.value)}

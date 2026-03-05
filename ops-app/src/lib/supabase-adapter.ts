@@ -353,7 +353,62 @@ export class SupabaseAdapter implements DataAdapter {
         if (error) throw new Error(error.message);
     }
 
-    // ... (existing helper methods)
+    async createProduct(payload: import('./types').ProductCreatePayload): Promise<import('./types').ProductListRow> {
+        if (!supabase) throw new Error('Supabase not initialized');
+        const sizes = (payload.sizes || []).filter(isValidDigitalStockSize);
+        const attributes: { name: string; slug: string; options: string[] }[] = [];
+        if (sizes.length > 0) {
+            attributes.push({ name: 'Size', slug: 'pa_size', options: sizes });
+        }
+        const stockInit: Record<string, number> = {};
+        (sizes.length > 0 ? sizes : ['-']).forEach(s => { stockInit[s] = 0; });
+        const insert: Record<string, unknown> = {
+            name: payload.name,
+            sku: payload.sku?.trim() || null,
+            school_id: payload.school_id || null,
+            attributes: attributes.length > 0 ? attributes : null,
+            stock_on_shelf: stockInit,
+            stock_in_transit: { ...stockInit },
+            requires_embroidery: payload.requires_embroidery ?? false,
+            price: payload.price ?? 0,
+            manufacturer_name: payload.manufacturer_name?.trim() || null,
+            manufacturer_id: payload.manufacturer_id?.trim() || null,
+            manufacturer_id_kids: payload.manufacturer_id_kids?.trim() || null,
+            manufacturer_id_adult: payload.manufacturer_id_adult?.trim() || null,
+        };
+        const { data, error } = await supabase.from('products').insert(insert).select('*, schools(code, name)').single();
+        if (error) throw new Error(error.message);
+        const p = data as any;
+        const school = p.schools as { code?: string; name?: string } | null;
+        return {
+            id: p.id,
+            sku: p.sku ?? null,
+            name: p.name,
+            category: p.category ?? null,
+            price: Number(p.price) || 0,
+            requires_embroidery: Boolean(p.requires_embroidery),
+            school_id: p.school_id ?? null,
+            school_code: school?.code ?? null,
+            school_name: school?.name ?? null,
+            attributes: p.attributes ?? null,
+            sizes: (p.attributes && Array.isArray(p.attributes))
+                ? (p.attributes.find((a: any) => a?.name === 'Size' || a?.slug === 'pa_size')?.options || [])
+                : [],
+            stock_on_shelf: p.stock_on_shelf || {},
+            stock_in_transit: p.stock_in_transit || {},
+            woocommerce_id: p.woocommerce_id ?? null,
+            manufacturer_name: p.manufacturer_name ?? null,
+            manufacturer_id: p.manufacturer_id ?? null,
+            manufacturer_id_kids: p.manufacturer_id_kids ?? null,
+            manufacturer_id_adult: p.manufacturer_id_adult ?? null,
+            manufacturer_product: p.manufacturer_product ?? null,
+            is_available_for_sale: p.is_available_for_sale !== false,
+            cost: p.cost != null ? Number(p.cost) : null,
+            embroidery_print_cost: p.embroidery_print_cost != null ? Number(p.embroidery_print_cost) : null,
+            created_at: p.created_at ?? new Date().toISOString(),
+            updated_at: p.updated_at ?? new Date().toISOString(),
+        };
+    }
 
     private mapToAnalyticsOrder(o: Order): AnalyticsOrderRow {
         const total = o.items.reduce((sum, i) => sum + (i.quantity * 0), 0); // TODO: unit_price missing in Order type?

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Search, RefreshCw, Pencil, X, Download, ChevronDown, ChevronRight, ImageIcon, BarChart3 } from 'lucide-react';
+import { Package, Search, RefreshCw, Pencil, X, Download, ChevronDown, ChevronRight, ImageIcon, BarChart3, Plus, School } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
 import { useSession } from '@/lib/session-context';
 import { exportToCSV } from '@/lib/csv-export';
@@ -150,6 +150,29 @@ export default function AllProductsPage() {
     const [schools, setSchools] = useState<{ id: string; code: string; name: string }[]>([]);
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
+    // Add Product modal (admin only)
+    const [showAddProduct, setShowAddProduct] = useState(false);
+    const [addingProduct, setAddingProduct] = useState(false);
+    const [newProductForm, setNewProductForm] = useState({
+        name: '',
+        sku: '',
+        school_id: '',
+        sizes: '',
+        requires_embroidery: false,
+        manufacturer_name: '',
+        manufacturer_id: '',
+        manufacturer_id_kids: '',
+        manufacturer_id_adult: '',
+    });
+
+    // Create new school (from product edit or add product modal)
+    const [showAddSchool, setShowAddSchool] = useState(false);
+    const [addingSchool, setAddingSchool] = useState(false);
+    const [newSchoolName, setNewSchoolName] = useState('');
+    const [newSchoolCode, setNewSchoolCode] = useState('');
+    /** When set, Add School modal was opened from a product form; on success set school in that context. */
+    const [addSchoolContext, setAddSchoolContext] = useState<'edit' | 'create' | null>(null);
+
     const load = async () => {
         setLoading(true);
         try {
@@ -171,6 +194,61 @@ export default function AllProductsPage() {
     }, [adapter]);
 
     const isSchool = role === 'school';
+
+    const handleAddSchool = async () => {
+        if (!newSchoolName?.trim() || !newSchoolCode?.trim()) return;
+        setAddingSchool(true);
+        try {
+            const created = await adapter.createSchool(newSchoolName.trim(), newSchoolCode.trim().toUpperCase());
+            const list = await adapter.getSchools();
+            setSchools(list);
+            if (addSchoolContext === 'edit' && editing) {
+                setEditForm((f) => ({ ...f, school_id: created.id }));
+            }
+            if (addSchoolContext === 'create') {
+                setNewProductForm((f) => ({ ...f, school_id: created.id }));
+            }
+            setShowAddSchool(false);
+            setNewSchoolName('');
+            setNewSchoolCode('');
+            setAddSchoolContext(null);
+        } catch (e) {
+            setEditError(e instanceof Error ? e.message : 'Failed to add school');
+        } finally {
+            setAddingSchool(false);
+        }
+    };
+
+    const handleAddProduct = async () => {
+        const nameTrim = newProductForm.name.trim();
+        if (!nameTrim) return;
+        setAddingProduct(true);
+        setEditError(null);
+        try {
+            const sizes = newProductForm.sizes
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+            await adapter.createProduct({
+                name: nameTrim,
+                sku: newProductForm.sku.trim() || null,
+                school_id: newProductForm.school_id.trim() || null,
+                sizes: sizes.length > 0 ? sizes : undefined,
+                requires_embroidery: newProductForm.requires_embroidery,
+                manufacturer_name: newProductForm.manufacturer_name.trim() || null,
+                manufacturer_id: newProductForm.manufacturer_id.trim() || null,
+                manufacturer_id_kids: newProductForm.manufacturer_id_kids.trim() || null,
+                manufacturer_id_adult: newProductForm.manufacturer_id_adult.trim() || null,
+            });
+            setShowAddProduct(false);
+            setNewProductForm({ name: '', sku: '', school_id: '', sizes: '', requires_embroidery: false, manufacturer_name: '', manufacturer_id: '', manufacturer_id_kids: '', manufacturer_id_adult: '' });
+            await load();
+        } catch (e) {
+            setEditError(e instanceof Error ? e.message : 'Failed to create product');
+        } finally {
+            setAddingProduct(false);
+        }
+    };
 
     const schoolScoped = useMemo(() => {
         if (role !== 'school' || !schoolCode) return products;
@@ -310,6 +388,16 @@ export default function AllProductsPage() {
                                     className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                                 />
                             </div>
+                            {!isSchool && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowAddProduct(true); setEditError(null); }}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Add product
+                                </button>
+                            )}
                             <button
                                 onClick={load}
                                 disabled={loading}
@@ -529,7 +617,16 @@ export default function AllProductsPage() {
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School</label>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setAddSchoolContext('edit'); setNewSchoolName(''); setNewSchoolCode(''); setShowAddSchool(true); setEditError(null); }}
+                                            className="text-blue-600 hover:text-blue-700 text-xs font-medium"
+                                        >
+                                            + Create new school
+                                        </button>
+                                    </div>
                                     <select
                                         value={editForm.school_id}
                                         onChange={(e) => setEditForm((f) => ({ ...f, school_id: e.target.value }))}
@@ -660,6 +757,157 @@ export default function AllProductsPage() {
                                 className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50"
                             >
                                 {saving ? 'Saving...' : 'Save'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add School modal (from product edit or add product) */}
+            {showAddSchool && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <School className="w-5 h-5 text-slate-500" />
+                                Add School
+                            </h3>
+                            <button type="button" onClick={() => { setShowAddSchool(false); setAddSchoolContext(null); setEditError(null); }} className="p-1 text-slate-400 hover:text-slate-600 rounded-md">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            {editError && <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm border border-red-100">{editError}</div>}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School Name</label>
+                                <input
+                                    type="text"
+                                    value={newSchoolName}
+                                    onChange={(e) => setNewSchoolName(e.target.value)}
+                                    placeholder="e.g. Flaxmill Primary School"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School Code</label>
+                                <input
+                                    type="text"
+                                    value={newSchoolCode}
+                                    onChange={(e) => setNewSchoolCode(e.target.value.toUpperCase())}
+                                    placeholder="e.g. FLAXMILL"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                            <button type="button" onClick={() => { setShowAddSchool(false); setAddSchoolContext(null); setEditError(null); }} className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
+                            <button type="button" onClick={handleAddSchool} disabled={addingSchool || !newSchoolName.trim() || !newSchoolCode.trim()} className="px-4 py-2 text-sm font-semibold text-white bg-[#002D2B] rounded-lg hover:bg-[#004440] disabled:opacity-50">
+                                {addingSchool ? 'Adding...' : 'Add School'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Product modal (admin only) */}
+            {showAddProduct && !isSchool && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <Package className="w-5 h-5 text-slate-500" />
+                                Add Product
+                            </h3>
+                            <button type="button" onClick={() => { setShowAddProduct(false); setEditError(null); }} className="p-1 text-slate-400 hover:text-slate-600 rounded-md">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4 overflow-y-auto">
+                            {editError && <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm border border-red-100">{editError}</div>}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Product name</label>
+                                <input
+                                    type="text"
+                                    value={newProductForm.name}
+                                    onChange={(e) => setNewProductForm((f) => ({ ...f, name: e.target.value }))}
+                                    placeholder="e.g. Polo Shirt - Navy"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Code / SKU (optional)</label>
+                                <input
+                                    type="text"
+                                    value={newProductForm.sku}
+                                    onChange={(e) => setNewProductForm((f) => ({ ...f, sku: e.target.value }))}
+                                    placeholder="Leave blank for manual products"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAddSchoolContext('create'); setNewSchoolName(''); setNewSchoolCode(''); setShowAddSchool(true); setEditError(null); }}
+                                        className="text-blue-600 hover:text-blue-700 text-xs font-medium"
+                                    >
+                                        + Create new school
+                                    </button>
+                                </div>
+                                <select
+                                    value={newProductForm.school_id}
+                                    onChange={(e) => setNewProductForm((f) => ({ ...f, school_id: e.target.value }))}
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
+                                >
+                                    <option value="">No school (Global)</option>
+                                    {schools.map((s) => (
+                                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Sizes</label>
+                                <input
+                                    type="text"
+                                    value={newProductForm.sizes}
+                                    onChange={(e) => setNewProductForm((f) => ({ ...f, sizes: e.target.value }))}
+                                    placeholder="4, 6, 8, 10, 12, 14, 16 or S, M, L, XL"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Manufacturer (for garment orders)</label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    <input
+                                        type="text"
+                                        value={newProductForm.manufacturer_name}
+                                        onChange={(e) => setNewProductForm((f) => ({ ...f, manufacturer_name: e.target.value }))}
+                                        placeholder="Manufacturer name"
+                                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    />
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <input type="text" value={newProductForm.manufacturer_id} onChange={(e) => setNewProductForm((f) => ({ ...f, manufacturer_id: e.target.value }))} placeholder="Mfr ID" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                                        <input type="text" value={newProductForm.manufacturer_id_kids} onChange={(e) => setNewProductForm((f) => ({ ...f, manufacturer_id_kids: e.target.value }))} placeholder="Kids ID" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                                        <input type="text" value={newProductForm.manufacturer_id_adult} onChange={(e) => setNewProductForm((f) => ({ ...f, manufacturer_id_adult: e.target.value }))} placeholder="Adult ID" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="new-product-embroidery"
+                                    checked={newProductForm.requires_embroidery}
+                                    onChange={(e) => setNewProductForm((f) => ({ ...f, requires_embroidery: e.target.checked }))}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <label htmlFor="new-product-embroidery" className="text-sm text-slate-700 font-medium">Requires embroidery</label>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                            <button type="button" onClick={() => { setShowAddProduct(false); setEditError(null); }} className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
+                            <button type="button" onClick={handleAddProduct} disabled={addingProduct || !newProductForm.name.trim()} className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50">
+                                {addingProduct ? 'Adding...' : 'Add Product'}
                             </button>
                         </div>
                     </div>

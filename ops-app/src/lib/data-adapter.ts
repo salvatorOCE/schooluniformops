@@ -32,6 +32,8 @@ export interface DataAdapter {
     getAllProducts(): Promise<import('./types').ProductListRow[]>;
     /** Update product (manufacturer, availability, etc.). Does not overwrite SKU. */
     updateProduct(productId: string, payload: import('./types').ProductUpdatePayload): Promise<void>;
+    /** Create a new product (manual, not from WooCommerce). Returns the created product with id. */
+    createProduct(payload: import('./types').ProductCreatePayload): Promise<import('./types').ProductListRow>;
     createSchool(name: string, code: string): Promise<import('./types').School>;
 
     // Write operations

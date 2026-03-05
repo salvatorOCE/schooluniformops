@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Mail, Sparkles, FileDown } from 'lucide-react';
+import { X, Plus, Trash2, Mail, Sparkles, FileDown, School } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
 import { format } from 'date-fns';
 import { downloadBulkOrderInvoice } from '@/lib/generate-bulk-invoice-pdf';
@@ -29,9 +29,10 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
     const [loadingOrder, setLoadingOrder] = useState(!!orderId);
 
     const [schoolId, setSchoolId] = useState('');
-    const [isAddingSchool, setIsAddingSchool] = useState(false);
+    const [showCreateSchoolModal, setShowCreateSchoolModal] = useState(false);
     const [newSchoolName, setNewSchoolName] = useState('');
     const [newSchoolCode, setNewSchoolCode] = useState('');
+    const [addingSchool, setAddingSchool] = useState(false);
 
     const [orderNumber, setOrderNumber] = useState('');
     const [customerName, setCustomerName] = useState('');
@@ -165,12 +166,8 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
         const text = pastedEmail.trim();
         if (!text) return;
         // Require school so we can fill charge prices from that school's products (EDPS, FLAX, etc.)
-        if (!schoolId && !isAddingSchool) {
+        if (!schoolId) {
             setParseError('Please select a school first so we can fill in prices and item codes.');
-            return;
-        }
-        if (isAddingSchool) {
-            setParseError('Save the new school first, then paste the email and parse. Or select an existing school to auto-fill prices.');
             return;
         }
         setParsing(true);
@@ -229,16 +226,11 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
     };
 
     const handleSave = async () => {
-        if ((!schoolId && !isAddingSchool) || items.length === 0) return;
-        if (isAddingSchool && (!newSchoolName || !newSchoolCode)) return;
+        if (!schoolId || items.length === 0) return;
 
         setSaving(true);
         try {
-            let finalSchoolId = schoolId;
-            if (isAddingSchool) {
-                const newSchool = await adapter.createSchool(newSchoolName, newSchoolCode);
-                finalSchoolId = newSchool.id;
-            }
+            const finalSchoolId = schoolId;
 
             const delivered = items.map((item, i) =>
                 Math.min(Math.max(0, partialDelivery[i] ?? 0), Number.isFinite(item.quantity) ? item.quantity : 0)
@@ -319,46 +311,22 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                                 <label className="block text-sm font-medium text-slate-700">School Details</label>
                                 <button
                                     type="button"
-                                    onClick={() => setIsAddingSchool(!isAddingSchool)}
+                                    onClick={() => { setNewSchoolName(''); setNewSchoolCode(''); setShowCreateSchoolModal(true); }}
                                     className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                                 >
-                                    {isAddingSchool ? 'Select Existing School' : '+ Create New School'}
+                                    + Create New School
                                 </button>
                             </div>
-
-                            {isAddingSchool ? (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <input
-                                            type="text"
-                                            placeholder="School Name (e.g., St John's Grammar)"
-                                            className="w-full border-slate-200 rounded-lg p-2.5 text-sm"
-                                            value={newSchoolName}
-                                            onChange={(e) => setNewSchoolName(e.target.value)}
-                                        />
-                                    </div>
-                                    <div>
-                                        <input
-                                            type="text"
-                                            placeholder="School Code (e.g., SJGS)"
-                                            className="w-full border-slate-200 rounded-lg p-2.5 text-sm uppercase"
-                                            value={newSchoolCode}
-                                            onChange={(e) => setNewSchoolCode(e.target.value.toUpperCase())}
-                                        />
-                                    </div>
-                                </div>
-                            ) : (
-                                <select
-                                    className="w-full border-slate-200 rounded-lg p-2.5 text-slate-700 bg-white"
-                                    value={schoolId}
-                                    onChange={(e) => setSchoolId(e.target.value)}
-                                >
-                                    <option value="">-- Choose a school --</option>
-                                    {schools.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                                    ))}
-                                </select>
-                            )}
+                            <select
+                                className="w-full border border-slate-200 rounded-lg p-2.5 text-slate-700 bg-white"
+                                value={schoolId}
+                                onChange={(e) => setSchoolId(e.target.value)}
+                            >
+                                <option value="">-- Choose a school --</option>
+                                {schools.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Order Details */}
@@ -609,13 +577,79 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                         <button
                             onClick={handleSave}
                             className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                            disabled={saving || loadingOrder || (!schoolId && !isAddingSchool) || items.length === 0}
+                            disabled={saving || loadingOrder || !schoolId || items.length === 0}
                         >
                             {saving ? (orderId ? 'Saving...' : 'Creating...') : (orderId ? 'Save changes' : 'Create Bulk Order')}
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* Create New School modal (same pattern as digital stock) */}
+            {showCreateSchoolModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <School className="w-5 h-5 text-slate-500" />
+                                Add School
+                            </h3>
+                            <button type="button" onClick={() => setShowCreateSchoolModal(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-md">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School Name</label>
+                                <input
+                                    type="text"
+                                    value={newSchoolName}
+                                    onChange={(e) => setNewSchoolName(e.target.value)}
+                                    placeholder="e.g. Flaxmill Primary School"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">School Code</label>
+                                <input
+                                    type="text"
+                                    value={newSchoolCode}
+                                    onChange={(e) => setNewSchoolCode(e.target.value.toUpperCase())}
+                                    placeholder="e.g. FLAXMILL"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                            <button type="button" onClick={() => setShowCreateSchoolModal(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    if (!newSchoolName.trim() || !newSchoolCode.trim()) return;
+                                    setAddingSchool(true);
+                                    try {
+                                        const created = await adapter.createSchool(newSchoolName.trim(), newSchoolCode.trim().toUpperCase());
+                                        const list = await adapter.getSchools();
+                                        setSchools(list);
+                                        setSchoolId(created.id);
+                                        setShowCreateSchoolModal(false);
+                                        setNewSchoolName('');
+                                        setNewSchoolCode('');
+                                    } catch (err) {
+                                        console.error('Failed to add school', err);
+                                    } finally {
+                                        setAddingSchool(false);
+                                    }
+                                }}
+                                disabled={addingSchool || !newSchoolName.trim() || !newSchoolCode.trim()}
+                                className="px-4 py-2 text-sm font-semibold text-white bg-[#002D2B] rounded-lg hover:bg-[#004440] disabled:opacity-50"
+                            >
+                                {addingSchool ? 'Adding...' : 'Add School'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

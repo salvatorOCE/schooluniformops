@@ -3,7 +3,7 @@
 # Do NOT set "publish" here — @netlify/plugin-nextjs controls it; setting publish breaks CSS/JS on deploy.
 
 [build]
-  command = "npm run build:netlify"
+  command = "npx next build --webpack"
 
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "WOO_URL,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"

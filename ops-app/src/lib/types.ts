@@ -29,6 +29,19 @@ export interface School {
   name: string;
 }
 
+/** Full school row for All Schools list: code, name, slug, logo, counts, timestamps. */
+export interface SchoolListRow {
+  id: string;
+  code: string;
+  name: string;
+  slug: string | null;
+  logo_url: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  product_count?: number;
+  order_count?: number;
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -93,6 +106,20 @@ export interface ProductUpdatePayload {
   is_available_for_sale?: boolean;
   cost?: number | null;
   embroidery_print_cost?: number | null;
+}
+
+/** Payload for creating a new product (admin / digital stock). */
+export interface ProductCreatePayload {
+  name: string;
+  sku?: string | null;
+  school_id?: string | null;
+  sizes?: string[];
+  requires_embroidery?: boolean;
+  price?: number;
+  manufacturer_name?: string | null;
+  manufacturer_id?: string | null;
+  manufacturer_id_kids?: string | null;
+  manufacturer_id_adult?: string | null;
 }
 
 export interface Order {

@@ -1285,6 +1285,37 @@ export class MockAdapter implements DataAdapter {
         console.log('Mock updateProduct', _productId, _payload);
     }
 
+    async createProduct(payload: import('./types').ProductCreatePayload): Promise<import('./types').ProductListRow> {
+        const id = `mock-prod-${Date.now()}`;
+        const now = new Date().toISOString();
+        return {
+            id,
+            sku: payload.sku ?? null,
+            name: payload.name,
+            category: null,
+            price: payload.price ?? 0,
+            requires_embroidery: payload.requires_embroidery ?? false,
+            school_id: payload.school_id ?? null,
+            school_code: null,
+            school_name: null,
+            attributes: (payload.sizes?.length ? [{ name: 'Size', slug: 'pa_size', options: payload.sizes }] : null) as any,
+            sizes: payload.sizes ?? [],
+            stock_on_shelf: {},
+            stock_in_transit: {},
+            woocommerce_id: null,
+            manufacturer_name: payload.manufacturer_name ?? null,
+            manufacturer_id: payload.manufacturer_id ?? null,
+            manufacturer_id_kids: payload.manufacturer_id_kids ?? null,
+            manufacturer_id_adult: payload.manufacturer_id_adult ?? null,
+            manufacturer_product: null,
+            is_available_for_sale: false,
+            cost: null,
+            embroidery_print_cost: null,
+            created_at: now,
+            updated_at: now,
+        };
+    }
+
     async getBulkOrders(): Promise<Order[]> {
         return mockOrders.filter(o => o.order_number.startsWith('BULK-'));
     }
