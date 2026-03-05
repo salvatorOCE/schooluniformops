@@ -174,15 +174,21 @@ export default function DistributionPage() {
                 await adapter.updateOrderItemSentQuantity(item.id, item.quantity);
             }
 
-            // After pack out, move all orders to Packed so they appear
-            // in the Dispatch tab (Schools) ready to ship.
-            await adapter.updateOrderStatus(order.id, 'Packed');
+            // Senior section: full pack of senior items → order is Packed.
+            // Non-senior section: if order also has senior items we only packed the non-senior part → Partial Order Complete; else Packed.
+            const hasSeniorPart = !isSeniorSection && !!(order as Order & { _alsoHasSeniorItems?: boolean })._alsoHasSeniorItems;
+            const newStatus = hasSeniorPart ? 'Partial Order Complete' : 'Packed';
+            await adapter.updateOrderStatus(order.id, newStatus);
         }
 
         setLastManifest(manifest);
+        const partialCount = !isSeniorSection ? packedOrders.filter(o => (o as Order & { _alsoHasSeniorItems?: boolean })._alsoHasSeniorItems).length : 0;
+        const packedCount = packedOrders.length - partialCount;
         toast.success(isSeniorSection
             ? 'Senior pack out completed. Orders marked as Packed and moved to Dispatch.'
-            : 'Pack out completed. Orders marked as Packed and moved to Dispatch.');
+            : partialCount > 0
+                ? `Pack out completed. ${packedCount > 0 ? `${packedCount} order(s) Packed. ` : ''}${partialCount} order(s) with senior items marked Partially Complete.`
+                : 'Pack out completed. Orders marked as Packed and moved to Dispatch.');
         handleBackToPackingList();
     };
 
