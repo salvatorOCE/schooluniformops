@@ -1,8 +1,8 @@
 'use client';
 
 import { Order, OrderItem } from '@/lib/types';
-import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { RefreshCw, Package } from 'lucide-react';
 
 interface PackingSessionViewProps {
     schoolName: string;
@@ -24,6 +24,8 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const [checkedState, setCheckedState] = useState<Record<string, Record<string, boolean>>>({});
     const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
+    /** Pick off shelf checklist: which lines have been picked. Key = product_name|size. */
+    const [pickOffShelfChecked, setPickOffShelfChecked] = useState<Record<string, boolean>>({});
 
     // Editing State
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
@@ -37,6 +39,32 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
 
     // Sort: Alphabetical by student name
     const toPackOrders = [...uniqueOrders].sort((a, b) => (a.student_name || '').localeCompare(b.student_name || ''));
+
+    // Pick off shelf: aggregate all items in this session by product + size for bulk picking (no SKU in UI)
+    const pickOffShelfTotals = useMemo(() => {
+        const byKey = new Map<string, { key: string; product_name: string; size: string; quantity: number }>();
+        for (const order of toPackOrders) {
+            for (const item of order.items) {
+                const name = (item.product_name || 'Unknown').trim();
+                const size = (item.size || '—').trim();
+                const key = `${name}|${size}`;
+                const existing = byKey.get(key);
+                const qty = item.quantity ?? 0;
+                if (existing) {
+                    existing.quantity += qty;
+                } else {
+                    byKey.set(key, { key, product_name: name, size, quantity: qty });
+                }
+            }
+        }
+        return Array.from(byKey.values()).sort((a, b) =>
+            a.product_name.localeCompare(b.product_name) || a.size.localeCompare(b.size)
+        );
+    }, [toPackOrders]);
+
+    const togglePickOffShelf = (rowKey: string) => {
+        setPickOffShelfChecked(prev => ({ ...prev, [rowKey]: !prev[rowKey] }));
+    };
 
     const isCompleted = (orderId: string) => completedOrders.some(o => o.id === orderId);
 
@@ -120,6 +148,49 @@ export function PackingSessionView({ schoolName, schoolCode, orders, isSeniorSec
                     </div>
                 </div>
             </div>
+
+            {/* Pick off shelf — checklist for mobile: grab in bulk then pack each order */}
+            {pickOffShelfTotals.length > 0 && (
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-amber-50/60">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Package className="w-5 h-5 text-amber-600 shrink-0" />
+                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Pick off shelf</h3>
+                    </div>
+                    <p className="text-xs text-slate-600 mb-3">Tap each line when picked, then run through each order below.</p>
+                    <ul className="space-y-1 list-none p-0 m-0">
+                        {pickOffShelfTotals.map((row) => {
+                            const checked = !!pickOffShelfChecked[row.key];
+                            return (
+                                <li key={row.key}>
+                                    <button
+                                        type="button"
+                                        onClick={() => togglePickOffShelf(row.key)}
+                                        className="w-full min-h-[48px] flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-200 bg-white text-left transition-colors active:bg-amber-100/80 touch-manipulation"
+                                    >
+                                        <span
+                                            className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center ${checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 bg-white'}`}
+                                            aria-hidden
+                                        >
+                                            {checked && (
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            )}
+                                        </span>
+                                        <span className={`flex-1 min-w-0 text-base ${checked ? 'line-through text-slate-500' : 'text-slate-800 font-medium'}`}>
+                                            {row.product_name}
+                                            {row.size !== '—' && <span className="text-slate-500 font-normal"> · Size {row.size}</span>}
+                                        </span>
+                                        <span className={`flex-shrink-0 text-lg font-bold tabular-nums ${checked ? 'text-slate-400' : 'text-amber-700'}`}>
+                                            ×{row.quantity}
+                                        </span>
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            )}
 
             {/* To Pack List */}
             <div className="flex-1 overflow-y-auto">
