@@ -15,6 +15,7 @@ import { useSession } from '@/lib/session-context';
 import { useData } from '@/lib/data-provider';
 import { FileDown, Loader2 } from 'lucide-react';
 import { downloadOrderDocketPdf, OrderDocketRow } from '@/lib/generate-order-docket-pdf';
+import { getStatusLabel } from '@/lib/utils';
 
 const WOO_SYNC_POLL_MS = 2 * 60 * 1000; // 2 minutes
 
@@ -274,7 +275,7 @@ function HistoryPageContent() {
                                 >
                                     <option value="">Change status…</option>
                                     {ORDER_STATUS_OPTIONS.map((s) => (
-                                        <option key={s} value={s}>{s}</option>
+                                        <option key={s} value={s}>{getStatusLabel(s)}</option>
                                     ))}
                                 </select>
                                 <button
@@ -293,7 +294,7 @@ function HistoryPageContent() {
                                             await refresh();
                                             setSelectedIds(new Set());
                                             setBulkStatus('');
-                                            toast.success(`${orderIds.length} order(s) updated to ${bulkStatus}`);
+                                            toast.success(`${orderIds.length} order(s) updated to ${getStatusLabel(bulkStatus)}`);
                                         } catch (e: any) {
                                             toast.error(e.message || 'Failed to update orders');
                                         } finally {

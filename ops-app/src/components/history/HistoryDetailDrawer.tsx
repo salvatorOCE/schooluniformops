@@ -202,7 +202,9 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
         try {
             await adapter.updateOrderStatus(order.orderId, newStatus);
             setCurrentStatus(newStatus);
-            toast.success(`Order changed to ${newStatus}`);
+            toast.success(`Order changed to ${getStatusLabel(newStatus)}`);
+            await refresh();
+            onNoteAdded?.();
 
             const updatedEvents = await adapter.getSystemEvents(order.orderId);
             setEvents(updatedEvents);
@@ -302,8 +304,8 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                                 disabled={isUpdating}
                                 onChange={handleStatusChange}
                             >
-                                {['Pending payment', 'Processing', 'On hold', 'Completed', 'Cancelled', 'Refunded', 'Failed', 'Trash'].map(s => (
-                                    <option key={s} value={s}>{s}</option>
+                                {['Pending payment', 'Processing', 'On-Hold', 'Embroidery', 'Distribution', 'Packed', 'Shipped', 'Partial Order Complete', 'Completed', 'Cancelled', 'Refunded', 'Failed'].map(s => (
+                                    <option key={s} value={s}>{getStatusLabel(s)}</option>
                                 ))}
                             </select>
                             {isUpdating && <span className="text-xs text-slate-400 animate-pulse">Saving...</span>}

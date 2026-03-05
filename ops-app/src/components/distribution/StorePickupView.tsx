@@ -13,9 +13,11 @@ interface StorePickupViewProps {
     onHandover: (orderId: string) => void;
     onPrintLabel: (order: Order) => void;
     onReportIssue: (order: Order) => void;
+    /** Called when order is updated (e.g. status change) so parent can refresh the list. */
+    onOrderUpdated?: () => void;
 }
 
-export function StorePickupView({ orders, onPack, onStage, onHandover, onPrintLabel, onReportIssue }: StorePickupViewProps) {
+export function StorePickupView({ orders, onPack, onStage, onHandover, onPrintLabel, onReportIssue, onOrderUpdated }: StorePickupViewProps) {
     const [stagingLocs, setStagingLocs] = useState<Record<string, string>>({});
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -137,6 +139,7 @@ export function StorePickupView({ orders, onPack, onStage, onHandover, onPrintLa
                 isOpen={!!selectedOrder}
                 order={selectedOrder}
                 onClose={() => setSelectedOrder(null)}
+                onOrderUpdated={onOrderUpdated}
             />
         </>
     );

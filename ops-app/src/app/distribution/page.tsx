@@ -406,6 +406,7 @@ export default function DistributionPage() {
                         onHandoverStore={handleHandoverStore}
                         onPrintLabel={setPrintOrder}
                         onReportIssue={setExceptionOrder}
+                        onOrderUpdated={loadData}
                     />
                 )}
             </div>

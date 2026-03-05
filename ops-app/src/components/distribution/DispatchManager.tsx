@@ -17,13 +17,14 @@ interface DispatchManagerProps {
     onHandoverStore: (orderId: string) => void;
     onPrintLabel: (order: Order) => void;
     onReportIssue: (order: Order) => void;
+    onOrderUpdated?: () => void;
 }
 
 export function DispatchManager({
     schoolRuns, homeOrders, storeOrders,
     onDispatchRun, onDispatchOrder, onBatchDispatchHome,
     onStageStore, onHandoverStore,
-    onPrintLabel, onReportIssue
+    onPrintLabel, onReportIssue, onOrderUpdated
 }: DispatchManagerProps) {
     const [mode, setMode] = useState<'SCHOOL' | 'HOME' | 'STORE'>('SCHOOL');
 
@@ -78,6 +79,7 @@ export function DispatchManager({
                         orders={storeOrders}
                         onPack={() => { }} // Not needed
                         onStage={onStageStore}
+                        onOrderUpdated={onOrderUpdated}
                         onHandover={onHandoverStore}
                         onPrintLabel={onPrintLabel}
                         onReportIssue={onReportIssue}

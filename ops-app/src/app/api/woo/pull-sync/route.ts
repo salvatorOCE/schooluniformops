@@ -214,6 +214,7 @@ export async function POST(req: NextRequest) {
                 'shipped': 'Shipped',
                 'completed': 'Completed',
                 'partial-order-complete': 'Partial Order Complete',
+                'partial-complete': 'Partial Order Complete',
                 'on-hold': 'On-Hold',
                 'cancelled': 'Cancelled',
                 'refunded': 'Refunded',

@@ -24,8 +24,14 @@ export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: Ord
     const [savingSent, setSavingSent] = useState<string | null>(null);
     const [savingStatus, setSavingStatus] = useState(false);
     const [resyncing, setResyncing] = useState(false);
+    /** Local status so dropdown and badge update immediately after change without parent refetch. */
+    const [displayStatus, setDisplayStatus] = useState<string>(order?.order_status ?? '');
 
-    const isPartialOrderComplete = order?.order_status === 'Partial Order Complete';
+    useEffect(() => {
+        if (order?.order_status !== undefined) setDisplayStatus(order.order_status);
+    }, [order?.id, order?.order_status]);
+
+    const isPartialOrderComplete = (displayStatus || order?.order_status) === 'Partial Order Complete';
 
     const ORDER_STATUS_OPTIONS = [
         'Pending Payment',
@@ -92,20 +98,21 @@ export function OrderDetailModal({ order, onClose, isOpen, onOrderUpdated }: Ord
                         <div className="flex items-center gap-3 mb-1 flex-wrap">
                             <h2 className="text-xl font-bold text-slate-900">{order.order_number}</h2>
                             <select
-                                value={order.order_status || ''}
+                                value={displayStatus || ''}
                                 disabled={savingStatus}
                                 onChange={async (e) => {
                                     const newStatus = e.target.value;
-                                    if (newStatus === (order.order_status || '')) return;
+                                    if (newStatus === (displayStatus || order?.order_status || '')) return;
                                     setSavingStatus(true);
                                     try {
                                         await adapter.updateOrderStatus(order.id, newStatus);
+                                        setDisplayStatus(newStatus);
                                         onOrderUpdated?.();
                                     } finally {
                                         setSavingStatus(false);
                                     }
                                 }}
-                                className={`text-xs font-bold rounded border px-2.5 py-0.5 min-w-[140px] bg-white cursor-pointer disabled:opacity-60 ${getStatusColor(order.order_status)}`}
+                                className={`text-xs font-bold rounded border px-2.5 py-0.5 min-w-[140px] bg-white cursor-pointer disabled:opacity-60 ${getStatusColor(displayStatus || order?.order_status)}`}
                             >
                                 {ORDER_STATUS_OPTIONS.map((s) => (
                                     <option key={s} value={s}>{getStatusLabel(s)}</option>

@@ -45,7 +45,12 @@ export function orderWithOnlySeniorItems(order: Order): Order {
 }
 
 export function getStatusLabel(status: string): string {
-    return status || 'Unknown';
+    if (!status) return 'Unknown';
+    const s = status.toLowerCase();
+    if (s.includes('partial order complete') || s.includes('partial-order-complete') || s.includes('partial-complete') || s.includes('partial completion')) {
+        return 'Partially Complete';
+    }
+    return status;
 }
 
 export function getStatusColor(status: string | undefined): string {
@@ -58,7 +63,7 @@ export function getStatusColor(status: string | undefined): string {
     if (s.includes('cancelled')) return 'bg-red-100 text-red-700 border-red-200';
     if (s.includes('failed')) return 'bg-red-100 text-red-700 border-red-200';
     if (s.includes('on-hold')) return 'bg-red-100 text-red-700 border-red-200';
-    if (s.includes('partial order complete') || s.includes('partial completion')) return 'bg-teal-100 text-teal-700 border-teal-200';
+    if (s.includes('partial order complete') || s.includes('partial completion') || s.includes('partial-order-complete') || s.includes('partial-complete')) return 'bg-purple-100 text-purple-700 border-purple-200';
 
     return 'bg-slate-50 text-slate-500 border-slate-100';
 }

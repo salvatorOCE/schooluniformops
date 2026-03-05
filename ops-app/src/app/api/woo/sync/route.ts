@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
             'Packed': 'packed',
             'Shipped': 'shipped',
             'Completed': 'completed',
-            'Partial Order Complete': 'partial-order-complete',
+            'Partial Order Complete': 'partial-complete',
             'On hold': 'on-hold',
             'On-Hold': 'on-hold',
             'Cancelled': 'cancelled',
@@ -65,6 +65,16 @@ export async function POST(req: NextRequest) {
 
         const wooStatus = statusMap[status] || status.toLowerCase();
         const data: any = { status: wooStatus };
+
+        // Optional kill switch: set WOO_ALLOW_PARTIAL_ORDER_COMPLETE_SYNC=false to disable syncing "Partial Order Complete" to WooCommerce.
+        const allowPartialOrderCompleteSync = process.env.WOO_ALLOW_PARTIAL_ORDER_COMPLETE_SYNC !== 'false';
+        if ((status === 'Partial Order Complete' || wooStatus === 'partial-complete') && !allowPartialOrderCompleteSync) {
+            return NextResponse.json({
+                success: false,
+                error: 'Partial Order Complete sync is disabled (WOO_ALLOW_PARTIAL_ORDER_COMPLETE_SYNC=false). Ops DB updated; WooCommerce not changed.',
+                _syncSkipped: true
+            }, { status: 200 });
+        }
 
         if (note) {
             // Add note logic
