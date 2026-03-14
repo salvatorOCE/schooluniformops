@@ -381,6 +381,7 @@ const mockFixUps: import('./types').FixUpRequest[] = [
 ];
 
 const mockPackOutManifests: import('./types').PackOutManifest[] = [];
+const mockProposals: import('./types').Proposal[] = [];
 
 export class MockAdapter implements DataAdapter {
     async getDashboardStats(): Promise<DashboardStats> {
@@ -1274,9 +1275,9 @@ export class MockAdapter implements DataAdapter {
 
     async getAllProducts(): Promise<import('./types').ProductListRow[]> {
         const rows: import('./types').ProductListRow[] = [
-            { id: 'prod-1', sku: 'POLO-NVY', name: 'Polo Shirt', category: "St Mary's", price: 35, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: [{ name: 'Size', options: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] }], sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1001, manufacturer_name: 'AUSSIE PACIFIC', manufacturer_id: null, manufacturer_id_kids: '3307', manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: true, cost: 18, embroidery_print_cost: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-            { id: 'prod-2', sku: 'DRESS-NVY', name: 'Dress', category: "St Mary's", price: 65, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1002, manufacturer_name: null, manufacturer_id: null, manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: false, cost: null, embroidery_print_cost: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-            { id: 'prod-3', sku: 'POLO-TEAL', name: 'Polo Shirt', category: 'Flaxmill', price: 35, requires_embroidery: true, school_id: 'FLAXMILL', school_code: 'FLAXMILL', school_name: 'Flaxmill School', attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1003, manufacturer_name: 'WinningSpirit', manufacturer_id: 'FL02', manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: 'Half Zip Fleece', is_available_for_sale: true, cost: 22, embroidery_print_cost: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-1', sku: 'POLO-NVY', name: 'Polo Shirt', category: "St Mary's", price: 35, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: [{ name: 'Size', options: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] }], sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1001, manufacturer_name: 'AUSSIE PACIFIC', manufacturer_id: null, manufacturer_id_kids: '3307', manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: true, cost: 18, embroidery_print_cost: 5, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-2', sku: 'DRESS-NVY', name: 'Dress', category: "St Mary's", price: 65, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1002, manufacturer_name: null, manufacturer_id: null, manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: false, cost: null, embroidery_print_cost: null, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-3', sku: 'POLO-TEAL', name: 'Polo Shirt', category: 'Flaxmill', price: 35, requires_embroidery: true, school_id: 'FLAXMILL', school_code: 'FLAXMILL', school_name: 'Flaxmill School', attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1003, manufacturer_name: 'WinningSpirit', manufacturer_id: 'FL02', manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: 'Half Zip Fleece', is_available_for_sale: true, cost: 22, embroidery_print_cost: 4, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         ];
         return rows;
     }
@@ -1311,6 +1312,7 @@ export class MockAdapter implements DataAdapter {
             is_available_for_sale: false,
             cost: null,
             embroidery_print_cost: null,
+            xero_item_code: null,
             created_at: now,
             updated_at: now,
         };
@@ -1392,5 +1394,42 @@ export class MockAdapter implements DataAdapter {
             unit_price: i.price
         }));
         return order;
+    }
+
+    async getProposals(): Promise<import('./types').Proposal[]> {
+        return [...mockProposals].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    async createProposal(proposal: Omit<import('./types').Proposal, 'id' | 'created_at' | 'updated_at'>): Promise<import('./types').Proposal> {
+        const now = new Date().toISOString();
+        const created: import('./types').Proposal = {
+            id: `prop-${Date.now()}`,
+            school_id: proposal.school_id ?? null,
+            school_name: proposal.school_name,
+            school_code: proposal.school_code,
+            title: proposal.title,
+            status: proposal.status,
+            pdf_url: proposal.pdf_url ?? null,
+            logo_url: (proposal as import('./types').Proposal).logo_url ?? null,
+            template_snapshot: proposal.template_snapshot ?? {},
+            template_id: proposal.template_id ?? null,
+            created_at: now,
+            updated_at: now,
+            sent_at: proposal.sent_at ?? null,
+        };
+        mockProposals.push(created);
+        return created;
+    }
+
+    async updateProposal(id: string, updates: Partial<Pick<import('./types').Proposal, 'title' | 'status' | 'pdf_url' | 'logo_url' | 'sent_at'>>): Promise<void> {
+        const p = mockProposals.find(x => x.id === id);
+        if (!p) return;
+        const now = new Date().toISOString();
+        if (updates.title !== undefined) p.title = updates.title;
+        if (updates.status !== undefined) p.status = updates.status;
+        if (updates.pdf_url !== undefined) p.pdf_url = updates.pdf_url;
+        if (updates.logo_url !== undefined) p.logo_url = updates.logo_url;
+        if (updates.sent_at !== undefined) p.sent_at = updates.sent_at;
+        p.updated_at = now;
     }
 }

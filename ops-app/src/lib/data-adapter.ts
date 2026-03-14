@@ -94,6 +94,11 @@ export interface DataAdapter {
     updateOrderItemQuantity(orderItemId: string, quantity: number): Promise<void>;
     /** Set how many units of this line have been sent (for Partial Order Complete). */
     updateOrderItemSentQuantity(orderItemId: string, sentQuantity: number): Promise<void>;
+
+    // Proposals
+    getProposals(): Promise<import('./types').Proposal[]>;
+    createProposal(proposal: Omit<import('./types').Proposal, 'id' | 'created_at' | 'updated_at'>): Promise<import('./types').Proposal>;
+    updateProposal(id: string, updates: Partial<Pick<import('./types').Proposal, 'title' | 'status' | 'pdf_url' | 'logo_url' | 'sent_at'>>): Promise<void>;
 }
 
 // Export the active adapter (mock for now)

@@ -27,6 +27,8 @@ export interface School {
   id: string;
   code: string;
   name: string;
+  /** Xero Contact ID (UUID) for this school when creating invoices. */
+  xero_contact_id?: string | null;
 }
 
 /** Full school row for All Schools list: code, name, slug, logo, counts, timestamps. */
@@ -40,6 +42,21 @@ export interface SchoolListRow {
   updated_at: string | null;
   product_count?: number;
   order_count?: number;
+  /** Xero Contact ID (UUID) for invoice Bill To. */
+  xero_contact_id?: string | null;
+}
+
+/** Garment library item: high-res image + manufacturer/code/price/type for linking to products. */
+export interface ManufacturerGarment {
+  id: string;
+  name: string;
+  image_url: string;
+  created_at: string;
+  manufacturer_name: string | null;
+  code: string | null;
+  price: number | null;
+  garment_type: string | null;
+  extra: Record<string, unknown>;
 }
 
 export interface Product {
@@ -86,6 +103,10 @@ export interface ProductListRow {
   cost: number | null;
   /** Total embroidery/print cost per unit. */
   embroidery_print_cost: number | null;
+  /** Xero Item Code for invoice line items; fallback to sku if null. */
+  xero_item_code: string | null;
+  /** Linked garment from Garment library (for syncing manufacturer, code, cost). */
+  manufacturer_garment_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -106,6 +127,9 @@ export interface ProductUpdatePayload {
   is_available_for_sale?: boolean;
   cost?: number | null;
   embroidery_print_cost?: number | null;
+  xero_item_code?: string | null;
+  /** Link to Garment library; use "Apply garment info" to sync manufacturer, code, cost. */
+  manufacturer_garment_id?: string | null;
 }
 
 /** Payload for creating a new product (admin / digital stock). */
@@ -150,8 +174,16 @@ export interface Order {
   // Production Notes
   notes?: string;
 
-  // Bulk order meta (e.g. date order was requested, partial delivery)
-  meta?: { order_requested_at?: string; partial_delivery?: number[] };
+  // Bulk order meta (e.g. date order was requested, partial delivery, Xero invoice)
+  meta?: {
+    order_requested_at?: string;
+    partial_delivery?: number[];
+    xero_invoice_id?: string;
+    xero_invoice_number?: string;
+    xero_tenant_id?: string;
+    /** 'admin' = Created order; 'school' = School placed order */
+    order_source?: 'admin' | 'school';
+  };
 
   // Senior Order Specifics
   is_senior_order?: boolean;
@@ -464,5 +496,40 @@ export interface ImportantNote {
   updated_at: string;
   /** Public URLs of attached images (e.g. from Supabase Storage) */
   image_urls: string[];
+}
+
+// Proposals — school + template (PDF-only); template PDF copied to proposal
+export type ProposalStatus = 'draft' | 'final' | 'sent';
+
+/** Proposal template: name + uploaded PDF (pdf_url). editor_state kept for DB compatibility, unused in v1. */
+export interface ProposalTemplate {
+  id: string;
+  name: string;
+  editor_state: Record<string, unknown>;
+  pdf_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Proposal {
+  id: string;
+  school_id: string | null;
+  school_name: string;
+  school_code: string;
+  title: string;
+  status: ProposalStatus;
+  pdf_url: string | null;
+  /** School logo URL (proposal-logos bucket) for "Generate PDF with logo" */
+  logo_url: string | null;
+  /** Unused in v1 (PDF-only); kept for DB compatibility */
+  template_snapshot: Record<string, unknown>;
+  template_id: string | null;
+  created_at: string;
+  updated_at: string;
+  sent_at: string | null;
+  /** Reply or notes from the school about this proposal */
+  reply_text: string | null;
+  /** When the reply was received or recorded */
+  reply_at: string | null;
 }
 

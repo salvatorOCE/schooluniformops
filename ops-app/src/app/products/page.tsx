@@ -7,6 +7,7 @@ import { useSession } from '@/lib/session-context';
 import { exportToCSV } from '@/lib/csv-export';
 import { useMobile } from '@/lib/mobile-context';
 import type { ProductListRow, ProductUpdatePayload } from '@/lib/types';
+import type { ManufacturerGarment } from '@/lib/types';
 
 function formatDate(iso: string): string {
     if (!iso) return '—';
@@ -145,10 +146,17 @@ export default function AllProductsPage() {
         is_available_for_sale: boolean;
         cost: string;
         embroidery_print_cost: string;
-    }>({ name: '', sku: '', category: '', price: '', school_id: '', manufacturer_name: '', manufacturer_id: '', manufacturer_id_kids: '', manufacturer_id_adult: '', manufacturer_product: '', is_available_for_sale: true, cost: '', embroidery_print_cost: '' });
+        xero_item_code: string;
+        manufacturer_garment_id: string;
+    }>({ name: '', sku: '', category: '', price: '', school_id: '', manufacturer_name: '', manufacturer_id: '', manufacturer_id_kids: '', manufacturer_id_adult: '', manufacturer_product: '', is_available_for_sale: true, cost: '', embroidery_print_cost: '', xero_item_code: '', manufacturer_garment_id: '' });
     const [editError, setEditError] = useState<string | null>(null);
     const [schools, setSchools] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [garments, setGarments] = useState<ManufacturerGarment[]>([]);
+    const [garmentSearch, setGarmentSearch] = useState('');
+    const [garmentDropdownOpen, setGarmentDropdownOpen] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    /** Which school sections are expanded in the by-school view. Key = school name or "No school". */
+    const [expandedSchools, setExpandedSchools] = useState<Record<string, boolean>>({});
 
     // Add Product modal (admin only)
     const [showAddProduct, setShowAddProduct] = useState(false);
@@ -192,6 +200,29 @@ export default function AllProductsPage() {
     useEffect(() => {
         adapter.getSchools().then(setSchools).catch(() => {});
     }, [adapter]);
+
+    useEffect(() => {
+        fetch('/api/manufacturer-garments', { credentials: 'include' })
+            .then((r) => r.json())
+            .then((data) => setGarments(Array.isArray(data) ? data : []))
+            .catch(() => setGarments([]));
+    }, []);
+
+    const selectedGarment = useMemo(
+        () => garments.find((g) => g.id === editForm.manufacturer_garment_id) ?? null,
+        [garments, editForm.manufacturer_garment_id]
+    );
+    const filteredGarments = useMemo(() => {
+        const q = garmentSearch.trim().toLowerCase();
+        if (!q) return garments;
+        return garments.filter(
+            (g) =>
+                (g.name && g.name.toLowerCase().includes(q)) ||
+                (g.code && g.code.toLowerCase().includes(q)) ||
+                (g.manufacturer_name && g.manufacturer_name.toLowerCase().includes(q)) ||
+                (g.garment_type && g.garment_type.toLowerCase().includes(q))
+        );
+    }, [garments, garmentSearch]);
 
     const isSchool = role === 'school';
 
@@ -287,8 +318,33 @@ export default function AllProductsPage() {
         );
     }, [schoolScoped, search, isSchool]);
 
+    /** Group filtered products by school for dropdown view. */
+    const productsBySchool = useMemo(() => {
+        const bySchool = new Map<string, ProductListRow[]>();
+        for (const p of filtered) {
+            const key = (p.school_name || 'No school').trim() || 'No school';
+            if (!bySchool.has(key)) bySchool.set(key, []);
+            bySchool.get(key)!.push(p);
+        }
+        return Array.from(bySchool.entries())
+            .map(([schoolName, products]) => ({
+                schoolName,
+                schoolCode: products[0]?.school_code ?? undefined,
+                products: products.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+            }))
+            .sort((a, b) => (a.schoolName === 'No school' ? 1 : 0) - (b.schoolName === 'No school' ? 1 : 0) || a.schoolName.localeCompare(b.schoolName));
+    }, [filtered]);
+
+    const toggleSchoolSection = (schoolName: string) => {
+        setExpandedSchools(prev => ({ ...prev, [schoolName]: !prev[schoolName] }));
+    };
+    /** Default: all school sections expanded (true). Only collapsed if explicitly set to false. */
+    const isSchoolExpanded = (schoolName: string) => expandedSchools[schoolName] !== false;
+
     const openEdit = (p: ProductListRow) => {
         setEditing(p);
+        setGarmentDropdownOpen(false);
+        setGarmentSearch('');
         setEditForm({
             name: p.name ?? '',
             sku: p.sku ?? '',
@@ -303,6 +359,8 @@ export default function AllProductsPage() {
             is_available_for_sale: p.is_available_for_sale !== false,
             cost: p.cost != null ? String(p.cost) : '',
             embroidery_print_cost: p.embroidery_print_cost != null ? String(p.embroidery_print_cost) : '',
+            xero_item_code: p.xero_item_code ?? '',
+            manufacturer_garment_id: p.manufacturer_garment_id ?? '',
         });
         setEditError(null);
     };
@@ -342,6 +400,8 @@ export default function AllProductsPage() {
                 is_available_for_sale: editForm.is_available_for_sale,
                 cost: editForm.cost.trim() ? parseFloat(editForm.cost) : null,
                 embroidery_print_cost: editForm.embroidery_print_cost.trim() ? parseFloat(editForm.embroidery_print_cost) : null,
+                xero_item_code: editForm.xero_item_code.trim() || null,
+                manufacturer_garment_id: editForm.manufacturer_garment_id.trim() || null,
             };
             await adapter.updateProduct(editing.id, payload);
             setEditing(null);
@@ -482,68 +542,94 @@ export default function AllProductsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filtered.map((p) => (
-                                    <React.Fragment key={p.id}>
-                                        <tr
-                                            className="hover:bg-slate-50/80 cursor-pointer"
-                                            onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
-                                        >
-                                            <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
-                                                    className="p-1 rounded text-slate-400 hover:text-slate-600"
-                                                    aria-label={expandedId === p.id ? 'Collapse' : 'Expand'}
-                                                >
-                                                    {expandedId === p.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                                </button>
-                                            </td>
-                                            <td className="px-3 py-2.5 font-mono text-slate-700">{p.sku ?? '—'}</td>
-                                        <td className="px-3 py-2.5 font-medium text-slate-900">{p.name}</td>
-                                        <td className="px-3 py-2.5 text-slate-600">
-                                            {p.school_name ? (
-                                                <span title={p.school_code ?? undefined}>{p.school_name}{p.school_code ? ` (${p.school_code})` : ''}</span>
-                                            ) : (
-                                                '—'
-                                            )}
-                                        </td>
-                                        {!isSchool && (
-                                            <>
-                                                <td className="px-3 py-2.5 text-slate-700">{p.manufacturer_name ?? '—'}</td>
-                                                <td className="px-3 py-2.5 text-slate-600">{p.manufacturer_product ?? '—'}</td>
-                                                <td className="px-3 py-2.5 font-mono text-slate-600 text-xs">{manufacturerIdDisplay(p)}</td>
-                                            </>
-                                        )}
-                                        <td className="px-3 py-2.5 text-right font-medium text-slate-900">{formatMoney(p.price)}</td>
-                                        {!isSchool && (
-                                            <>
-                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.cost)}</td>
-                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.embroidery_print_cost)}</td>
-                                                <td className="px-3 py-2.5 text-right font-medium text-slate-700">{formatMoney(totalCost(p))}</td>
-                                                <td className="px-3 py-2.5 text-right font-mono text-slate-500 text-xs">{p.woocommerce_id ?? '—'}</td>
-                                                <td className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDate(p.updated_at)}</td>
-                                                <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openEdit(p)}
-                                                        className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                                                        title="Edit product"
-                                                    >
-                                                        <Pencil className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </>
-                                        )}
-                                        </tr>
-                                        {expandedId === p.id && (
-                                            <tr>
-                                                <td colSpan={isSchool ? 5 : 14} className="p-0 align-top">
-                                                    <ProductDetailPanel productId={p.id} isSchool={isSchool} />
+                                {productsBySchool.map(({ schoolName, schoolCode, products }) => {
+                                    const expanded = isSchoolExpanded(schoolName);
+                                    return (
+                                        <React.Fragment key={schoolName}>
+                                            {/* School dropdown header */}
+                                            <tr
+                                                className="bg-slate-100/80 hover:bg-slate-100 border-y border-slate-200 cursor-pointer"
+                                                onClick={() => toggleSchoolSection(schoolName)}
+                                            >
+                                                <td className="px-2 py-2.5" colSpan={isSchool ? 5 : 14}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-slate-500">
+                                                            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                        </span>
+                                                        <School className="w-4 h-4 text-slate-500 shrink-0" />
+                                                        <span className="font-semibold text-slate-800">{schoolName}</span>
+                                                        {schoolCode && schoolName !== 'No school' && (
+                                                            <span className="text-slate-500 text-xs font-mono">({schoolCode})</span>
+                                                        )}
+                                                        <span className="text-slate-500 text-sm ml-1">— {products.length} product{products.length !== 1 ? 's' : ''}</span>
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        )}
-                                    </React.Fragment>
-                                ))}
+                                            {expanded && products.map((p) => (
+                                                <React.Fragment key={p.id}>
+                                                    <tr
+                                                        className="hover:bg-slate-50/80 cursor-pointer"
+                                                        onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
+                                                    >
+                                                        <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setExpandedId(prev => prev === p.id ? null : p.id)}
+                                                                className="p-1 rounded text-slate-400 hover:text-slate-600"
+                                                                aria-label={expandedId === p.id ? 'Collapse' : 'Expand'}
+                                                            >
+                                                                {expandedId === p.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-3 py-2.5 font-mono text-slate-700">{p.sku ?? '—'}</td>
+                                                        <td className="px-3 py-2.5 font-medium text-slate-900">{p.name}</td>
+                                                        <td className="px-3 py-2.5 text-slate-600">
+                                                            {p.school_name ? (
+                                                                <span title={p.school_code ?? undefined}>{p.school_name}{p.school_code ? ` (${p.school_code})` : ''}</span>
+                                                            ) : (
+                                                                '—'
+                                                            )}
+                                                        </td>
+                                                        {!isSchool && (
+                                                            <>
+                                                                <td className="px-3 py-2.5 text-slate-700">{p.manufacturer_name ?? '—'}</td>
+                                                                <td className="px-3 py-2.5 text-slate-600">{p.manufacturer_product ?? '—'}</td>
+                                                                <td className="px-3 py-2.5 font-mono text-slate-600 text-xs">{manufacturerIdDisplay(p)}</td>
+                                                            </>
+                                                        )}
+                                                        <td className="px-3 py-2.5 text-right font-medium text-slate-900">{formatMoney(p.price)}</td>
+                                                        {!isSchool && (
+                                                            <>
+                                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.cost)}</td>
+                                                                <td className="px-3 py-2.5 text-right text-slate-600">{formatMoney(p.embroidery_print_cost)}</td>
+                                                                <td className="px-3 py-2.5 text-right font-medium text-slate-700">{formatMoney(totalCost(p))}</td>
+                                                                <td className="px-3 py-2.5 text-right font-mono text-slate-500 text-xs">{p.woocommerce_id ?? '—'}</td>
+                                                                <td className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDate(p.updated_at)}</td>
+                                                                <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openEdit(p)}
+                                                                        className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                                                        title="Edit product"
+                                                                    >
+                                                                        <Pencil className="w-4 h-4" />
+                                                                    </button>
+                                                                </td>
+                                                            </>
+                                                        )}
+                                                    </tr>
+                                                    {expandedId === p.id && (
+                                                        <tr>
+                                                            <td colSpan={isSchool ? 5 : 14} className="p-0 align-top">
+                                                                <ProductDetailPanel productId={p.id} isSchool={isSchool} />
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            ))}
+                                        </React.Fragment>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -651,6 +737,82 @@ export default function AllProductsPage() {
                                 />
                             </div>
                             <div className="border-t border-slate-200 pt-4 mt-2">
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Garment library link</span>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Garment (from library)</label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 relative">
+                                        <input
+                                            type="text"
+                                            value={garmentDropdownOpen ? garmentSearch : (selectedGarment ? `${selectedGarment.name}${selectedGarment.code ? ` (${selectedGarment.code})` : ''}${selectedGarment.manufacturer_name ? ` · ${selectedGarment.manufacturer_name}` : ''}` : '')}
+                                            onChange={(e) => {
+                                                setGarmentSearch(e.target.value);
+                                                setGarmentDropdownOpen(true);
+                                            }}
+                                            onFocus={() => { setGarmentDropdownOpen(true); setGarmentSearch(''); }}
+                                            onBlur={() => setTimeout(() => setGarmentDropdownOpen(false), 200)}
+                                            placeholder="Search garment by name, code, manufacturer..."
+                                            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
+                                        />
+                                        {garmentDropdownOpen && (
+                                            <ul
+                                                className="absolute left-0 right-0 top-full mt-0.5 max-h-60 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg z-30 py-1"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                            >
+                                                <li>
+                                                    <button
+                                                        type="button"
+                                                        onMouseDown={(e) => { e.preventDefault(); setEditForm((f) => ({ ...f, manufacturer_garment_id: '' })); setGarmentDropdownOpen(false); setGarmentSearch(''); }}
+                                                        className="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+                                                    >
+                                                        No garment linked
+                                                    </button>
+                                                </li>
+                                                {filteredGarments.map((g) => (
+                                                    <li key={g.id}>
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setEditForm((f) => ({ ...f, manufacturer_garment_id: g.id }));
+                                                                setGarmentDropdownOpen(false);
+                                                                setGarmentSearch('');
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-sm text-slate-900 hover:bg-emerald-50"
+                                                        >
+                                                            {g.name}{g.code ? ` (${g.code})` : ''}{g.manufacturer_name ? ` · ${g.manufacturer_name}` : ''}{g.garment_type ? ` · ${g.garment_type}` : ''}
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                                {filteredGarments.length === 0 && garmentSearch.trim() && (
+                                                    <li className="px-3 py-2 text-sm text-slate-400">No garments match</li>
+                                                )}
+                                            </ul>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const g = garments.find((x) => x.id === editForm.manufacturer_garment_id);
+                                            if (!g) return;
+                                            setEditForm((f) => ({
+                                                ...f,
+                                                manufacturer_name: g.manufacturer_name ?? f.manufacturer_name,
+                                                manufacturer_id: g.code ?? f.manufacturer_id,
+                                                manufacturer_product: g.name || f.manufacturer_product,
+                                                cost: g.price != null ? String(g.price) : f.cost,
+                                            }));
+                                        }}
+                                        disabled={!editForm.manufacturer_garment_id}
+                                        className="shrink-0 px-3 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:pointer-events-none"
+                                    >
+                                        Apply garment info
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-500">Search and pick a garment to link; then use Apply garment info to sync manufacturer, code, product name and cost.</p>
+                            </div>
+                            <div className="border-t border-slate-200 pt-4 mt-2">
                                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Manufacturer & cost</span>
                             </div>
                             <div className="space-y-1.5">
@@ -726,6 +888,16 @@ export default function AllProductsPage() {
                                         onChange={(e) => setEditForm((f) => ({ ...f, embroidery_print_cost: e.target.value }))}
                                         placeholder="0.00"
                                         className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Xero Item Code</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.xero_item_code}
+                                        onChange={(e) => setEditForm((f) => ({ ...f, xero_item_code: e.target.value }))}
+                                        placeholder="e.g. EDPS-FL02 (leave blank to use SKU)"
+                                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                     />
                                 </div>
                             </div>

@@ -104,10 +104,10 @@ export class SupabaseAdapter implements DataAdapter {
             .eq('id', schoolId)
             .single();
 
-        const meta: Record<string, unknown> = {};
+        const meta: Record<string, unknown> = { order_source: 'admin' };
         if (orderDetails.requestedAt) meta.order_requested_at = orderDetails.requestedAt;
         if (orderDetails.partialDelivery && orderDetails.partialDelivery.length > 0) meta.partial_delivery = orderDetails.partialDelivery;
-        const metaPayload = Object.keys(meta).length > 0 ? meta : undefined;
+        const metaPayload = meta;
 
         // 3. Insert Order
         const { data: insertedOrder, error: orderError } = await supabase
@@ -169,9 +169,12 @@ export class SupabaseAdapter implements DataAdapter {
         if (orderDetails.studentName !== undefined) orderUpdates.student_name = orderDetails.studentName;
         if (orderDetails.status !== undefined) orderUpdates.status = orderDetails.status;
         if (orderDetails.requestedAt !== undefined || orderDetails.partialDelivery !== undefined) {
+            const { data: existing } = await supabase.from('orders').select('meta').eq('id', orderId).single();
+            const existingMeta = (existing as { meta?: Record<string, unknown> } | null)?.meta && typeof (existing as any).meta === 'object' ? (existing as any).meta as Record<string, unknown> : {};
             orderUpdates.meta = {
-                order_requested_at: orderDetails.requestedAt || undefined,
-                partial_delivery: orderDetails.partialDelivery ?? []
+                ...existingMeta,
+                order_requested_at: orderDetails.requestedAt ?? existingMeta.order_requested_at,
+                partial_delivery: orderDetails.partialDelivery ?? existingMeta.partial_delivery ?? [],
             };
         }
 
@@ -218,16 +221,37 @@ export class SupabaseAdapter implements DataAdapter {
 
     async getSchools(): Promise<import('./types').School[]> {
         if (!supabase) return [];
-        const { data, error } = await supabase
+        let data: { id: string; code: string; name: string; xero_contact_id?: string | null }[] | null = null;
+        const { data: dataWithXero, error: errWithXero } = await supabase
             .from('schools')
-            .select('id, code, name')
+            .select('id, code, name, xero_contact_id')
             .order('name');
 
-        if (error) {
-            console.error('Failed to get schools:', error);
-            return [];
+        if (errWithXero) {
+            const errCode = (errWithXero as any)?.code ?? '';
+            const errMsg = (errWithXero as any)?.message ?? '';
+            if (errCode === '42703') {
+                const { data: dataFallback, error: errFallback } = await supabase
+                    .from('schools')
+                    .select('id, code, name')
+                    .order('name');
+                if (!errFallback && dataFallback) {
+                    data = dataFallback.map((s: { id: string; code: string; name: string }) => ({ ...s, xero_contact_id: null }));
+                }
+            }
+            if (!data) {
+                console.error('Failed to get schools:', errMsg || errWithXero);
+                return [];
+            }
+        } else {
+            data = dataWithXero;
         }
-        return data as import('./types').School[];
+        return (data || []).map((s) => ({
+            id: s.id,
+            code: s.code,
+            name: s.name,
+            xero_contact_id: s.xero_contact_id ?? null,
+        }));
     }
 
     async getProductsBySchool(schoolId: string): Promise<import('./types').Product[]> {
@@ -261,11 +285,11 @@ export class SupabaseAdapter implements DataAdapter {
 
     async getAllProducts(): Promise<import('./types').ProductListRow[]> {
         if (!supabase) return [];
-        const selectWithManufacturer = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, manufacturer_name, manufacturer_id, manufacturer_id_kids, manufacturer_id_adult, manufacturer_product, is_available_for_sale, cost, embroidery_print_cost, created_at, updated_at, schools(code, name)';
-        const selectBase = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, created_at, updated_at, schools(code, name)';
+        const selectWithManufacturer = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, manufacturer_name, manufacturer_id, manufacturer_id_kids, manufacturer_id_adult, manufacturer_product, is_available_for_sale, cost, embroidery_print_cost, xero_item_code, manufacturer_garment_id, created_at, updated_at, schools(code, name)';
+        const selectBase = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, xero_item_code, created_at, updated_at, schools(code, name)';
+        const selectWithoutXero = 'id, sku, name, category, price, requires_embroidery, school_id, attributes, stock_on_shelf, stock_in_transit, woocommerce_id, created_at, updated_at, schools(code, name)';
 
         let data: any[] | null = null;
-        let error: { message?: string; code?: string } | null = null;
 
         const { data: dataFull, error: errorFull } = await supabase
             .from('products')
@@ -282,10 +306,18 @@ export class SupabaseAdapter implements DataAdapter {
                     .select(selectBase)
                     .order('name');
                 if (errorFallback) {
-                    console.error('Failed to get all products:', errorFallback.message || errorFallback);
-                    return [];
+                    const { data: dataMinimal, error: errorMinimal } = await supabase
+                        .from('products')
+                        .select(selectWithoutXero)
+                        .order('name');
+                    if (errorMinimal) {
+                        console.error('Failed to get all products:', (errorMinimal as any)?.message || errorMinimal);
+                        return [];
+                    }
+                    data = dataMinimal;
+                } else {
+                    data = dataFallback;
                 }
-                data = dataFallback;
             } else {
                 console.error('Failed to get all products:', msg || code || errorFull);
                 return [];
@@ -326,6 +358,8 @@ export class SupabaseAdapter implements DataAdapter {
                 is_available_for_sale: p.is_available_for_sale !== false,
                 cost: p.cost != null ? Number(p.cost) : null,
                 embroidery_print_cost: p.embroidery_print_cost != null ? Number(p.embroidery_print_cost) : null,
+                xero_item_code: p.xero_item_code ?? null,
+                manufacturer_garment_id: p.manufacturer_garment_id ?? null,
                 created_at: p.created_at ?? '',
                 updated_at: p.updated_at ?? '',
             };
@@ -349,6 +383,8 @@ export class SupabaseAdapter implements DataAdapter {
         if (payload.is_available_for_sale !== undefined) update.is_available_for_sale = payload.is_available_for_sale;
         if (payload.cost !== undefined) update.cost = payload.cost;
         if (payload.embroidery_print_cost !== undefined) update.embroidery_print_cost = payload.embroidery_print_cost;
+        if (payload.xero_item_code !== undefined) update.xero_item_code = payload.xero_item_code === '' ? null : payload.xero_item_code;
+        if (payload.manufacturer_garment_id !== undefined) update.manufacturer_garment_id = payload.manufacturer_garment_id === '' || payload.manufacturer_garment_id === null ? null : payload.manufacturer_garment_id;
         const { error } = await supabase.from('products').update(update).eq('id', productId);
         if (error) throw new Error(error.message);
     }
@@ -405,6 +441,7 @@ export class SupabaseAdapter implements DataAdapter {
             is_available_for_sale: p.is_available_for_sale !== false,
             cost: p.cost != null ? Number(p.cost) : null,
             embroidery_print_cost: p.embroidery_print_cost != null ? Number(p.embroidery_print_cost) : null,
+            xero_item_code: p.xero_item_code ?? null,
             created_at: p.created_at ?? new Date().toISOString(),
             updated_at: p.updated_at ?? new Date().toISOString(),
         };
@@ -1689,5 +1726,70 @@ export class SupabaseAdapter implements DataAdapter {
 
     async getHistoryRuns(): Promise<import('./types').RunHistoryRecord[]> {
         return [];
+    }
+
+    // --- PROPOSALS ---
+    async getProposals(): Promise<import('./types').Proposal[]> {
+        if (!supabase) return [];
+        const { data, error } = await supabase
+            .from('proposals')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.warn('getProposals failed (table may not exist):', error.message);
+            return [];
+        }
+        return (data || []).map((row: any) => this.mapProposal(row));
+    }
+
+    async createProposal(proposal: Omit<import('./types').Proposal, 'id' | 'created_at' | 'updated_at'>): Promise<import('./types').Proposal> {
+        if (!supabase) throw new Error('Supabase not initialized');
+        const { data, error } = await supabase
+            .from('proposals')
+            .insert({
+                school_id: proposal.school_id || null,
+                school_name: proposal.school_name,
+                school_code: proposal.school_code,
+                title: proposal.title,
+                status: proposal.status,
+                pdf_url: proposal.pdf_url || null,
+                logo_url: (proposal as any).logo_url ?? null,
+                template_snapshot: proposal.template_snapshot || {},
+                template_id: proposal.template_id || null,
+                sent_at: proposal.sent_at || null,
+            })
+            .select()
+            .single();
+        if (error) throw new Error(error.message || 'Failed to create proposal');
+        return this.mapProposal(data);
+    }
+
+    async updateProposal(id: string, updates: Partial<Pick<import('./types').Proposal, 'title' | 'status' | 'pdf_url' | 'logo_url' | 'sent_at'>>): Promise<void> {
+        if (!supabase) return;
+        const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (updates.title !== undefined) payload.title = updates.title;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.pdf_url !== undefined) payload.pdf_url = updates.pdf_url;
+        if (updates.logo_url !== undefined) payload.logo_url = updates.logo_url;
+        if (updates.sent_at !== undefined) payload.sent_at = updates.sent_at;
+        await supabase.from('proposals').update(payload).eq('id', id);
+    }
+
+    private mapProposal(row: any): import('./types').Proposal {
+        return {
+            id: row.id,
+            school_id: row.school_id ?? null,
+            school_name: row.school_name ?? '',
+            school_code: row.school_code ?? '',
+            title: row.title ?? '',
+            status: (row.status || 'draft') as import('./types').ProposalStatus,
+            pdf_url: row.pdf_url ?? null,
+            logo_url: row.logo_url ?? null,
+            template_snapshot: row.template_snapshot ?? {},
+            template_id: row.template_id ?? null,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            sent_at: row.sent_at ?? null,
+        };
     }
 }

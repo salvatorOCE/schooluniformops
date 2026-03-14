@@ -129,7 +129,7 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                         const orderKey = order.id || order.orderId;
                         if (orderKey) {
                             Promise.all([
-                                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : null)),
+                                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)),
                                 fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : { items: [] })),
                             ]).then(([wooRes, imgRes]) => {
                                 setWooOrder(wooRes || null);
@@ -155,7 +155,7 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
             const orderKey = order.id || order.orderId;
             if (orderKey) {
                 setWooLoading(true);
-                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`)
+                fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`, { credentials: 'include' })
                     .then((res) => (res.ok ? res.json() : null))
                     .then((data: WooOrder | null) => {
                         setWooOrder(data || null);
@@ -237,7 +237,7 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
             const orderKey = order?.id || order?.orderId;
             if (orderKey) {
                 const [wooRes, imgRes] = await Promise.all([
-                    fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : null)),
+                    fetch(`/api/woo/order-details?orderId=${encodeURIComponent(orderKey)}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)),
                     fetch(`/api/woo/order-product-images?orderId=${encodeURIComponent(orderKey)}`).then((r) => (r.ok ? r.json() : { items: [] })),
                 ]);
                 setWooOrder(wooRes || null);
@@ -396,7 +396,7 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                         </h3>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2 text-sm">
                             {wooLoading ? (
-                                <p className="text-slate-500">Loading dates from WooCommerce…</p>
+                                <p className="text-slate-500">Loading dates…</p>
                             ) : wooOrder ? (
                                 <>
                                     {wooOrder.date_created && (
@@ -415,8 +415,20 @@ export function HistoryDetailDrawer({ order, onClose, onNoteAdded }: HistoryDeta
                                         <p className="text-slate-500">No date info in WooCommerce for this order.</p>
                                     )}
                                 </>
+                            ) : order?.createdAt || order?.paidAt ? (
+                                <>
+                                    {order.createdAt && (
+                                        <p><span className="text-slate-500 font-medium">Order placed:</span>{' '}
+                                            {format(new Date(order.createdAt), 'EEEE, d MMMM yyyy · HH:mm')}</p>
+                                    )}
+                                    {order.paidAt && (
+                                        <p><span className="text-slate-500 font-medium">Paid:</span>{' '}
+                                            {format(new Date(order.paidAt), 'EEEE, d MMMM yyyy · HH:mm')}</p>
+                                    )}
+                                    <p className="text-slate-400 text-xs mt-1">Dates from order records. For full WooCommerce details, run “Refresh dates from Woo” on the Orders page.</p>
+                                </>
                             ) : (
-                                <p className="text-slate-500">Order dates from WooCommerce could not be loaded. Run “Refresh dates from Woo” on the Orders page to sync.</p>
+                                <p className="text-slate-500">Order dates could not be loaded. Run “Refresh dates from Woo” on the Orders page to sync.</p>
                             )}
                         </div>
                     </section>

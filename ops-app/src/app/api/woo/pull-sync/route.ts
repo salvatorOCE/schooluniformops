@@ -32,7 +32,10 @@ export async function POST(req: NextRequest) {
     try {
         const woo = startWoo();
         if (!woo) {
-            return NextResponse.json({ error: 'WooCommerce not configured' }, { status: 500 });
+            return NextResponse.json({
+                error: 'WooCommerce not configured',
+                hint: 'Add WOO_URL, WOO_CONSUMER_KEY, and WOO_CONSUMER_SECRET to .env.local (from WooCommerce → Settings → Advanced → REST API).'
+            }, { status: 500 });
         }
 
 

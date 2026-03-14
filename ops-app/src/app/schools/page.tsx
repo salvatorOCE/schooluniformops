@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { School, Search, RefreshCw, Download, Plus, X } from 'lucide-react';
+import { School, Search, RefreshCw, Download, Plus, X, Pencil } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
 import { exportToCSV } from '@/lib/csv-export';
 import { useMobile } from '@/lib/mobile-context';
@@ -28,6 +28,10 @@ export default function AllSchoolsPage() {
     const [addError, setAddError] = useState<string | null>(null);
     const [newSchoolName, setNewSchoolName] = useState('');
     const [newSchoolCode, setNewSchoolCode] = useState('');
+    const [editSchool, setEditSchool] = useState<SchoolListRow | null>(null);
+    const [editXeroContactId, setEditXeroContactId] = useState('');
+    const [savingXero, setSavingXero] = useState(false);
+    const [xeroEditError, setXeroEditError] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
@@ -73,6 +77,30 @@ export default function AllSchoolsPage() {
             setAddError(e instanceof Error ? e.message : 'Failed to add school');
         } finally {
             setAddingSchool(false);
+        }
+    };
+
+    const handleSaveXeroContactId = async () => {
+        if (!editSchool) return;
+        setSavingXero(true);
+        setXeroEditError(null);
+        try {
+            const res = await fetch(`/api/schools/${editSchool.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ xero_contact_id: editXeroContactId.trim() || null }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || `Failed (${res.status})`);
+            }
+            setEditSchool(null);
+            await load();
+        } catch (e) {
+            setXeroEditError(e instanceof Error ? e.message : 'Failed to update');
+        } finally {
+            setSavingXero(false);
         }
     };
 
@@ -171,6 +199,7 @@ export default function AllSchoolsPage() {
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Code</th>
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Name</th>
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Slug</th>
+                                    <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Xero Contact ID</th>
                                     <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Products</th>
                                     <th className="px-3 py-3 text-right font-semibold text-slate-600 text-xs uppercase tracking-wider">Orders</th>
                                     <th className="px-3 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wider">Created</th>
@@ -196,6 +225,26 @@ export default function AllSchoolsPage() {
                                         <td className="px-3 py-2.5 font-mono text-slate-700 font-medium">{s.code ?? '—'}</td>
                                         <td className="px-3 py-2.5 font-medium text-slate-900">{s.name ?? '—'}</td>
                                         <td className="px-3 py-2.5 text-slate-600 font-mono text-xs">{s.slug ?? '—'}</td>
+                                        <td className="px-3 py-2.5">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-mono text-xs text-slate-600 truncate max-w-[140px]" title={s.xero_contact_id ?? undefined}>
+                                                    {s.xero_contact_id ? `${s.xero_contact_id.slice(0, 8)}…` : '—'}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditSchool(s);
+                                                        setEditXeroContactId(s.xero_contact_id ?? '');
+                                                        setXeroEditError(null);
+                                                    }}
+                                                    className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                                                    title="Edit Xero Contact ID"
+                                                >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </td>
                                         <td className="px-3 py-2.5 text-right text-slate-700">{s.product_count ?? 0}</td>
                                         <td className="px-3 py-2.5 text-right text-slate-700">{s.order_count ?? 0}</td>
                                         <td className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDate(s.created_at)}</td>
@@ -278,6 +327,58 @@ export default function AllSchoolsPage() {
                                 className="px-4 py-2 text-sm font-semibold text-white bg-[#002D2B] rounded-lg hover:bg-[#004440] disabled:opacity-50"
                             >
                                 {addingSchool ? 'Adding...' : 'Add School'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Xero Contact ID modal */}
+            {editSchool && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="text-lg font-semibold text-slate-900">Xero Contact — {editSchool.name}</h3>
+                            <button
+                                type="button"
+                                onClick={() => { setEditSchool(null); setXeroEditError(null); }}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-md"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            {xeroEditError && (
+                                <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm border border-red-100">
+                                    {xeroEditError}
+                                </div>
+                            )}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Xero Contact ID (UUID)</label>
+                                <input
+                                    type="text"
+                                    value={editXeroContactId}
+                                    onChange={(e) => setEditXeroContactId(e.target.value)}
+                                    placeholder="Leave blank to auto-create on first invoice"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                            <button
+                                type="button"
+                                onClick={() => { setEditSchool(null); setXeroEditError(null); }}
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveXeroContactId}
+                                disabled={savingXero}
+                                className="px-4 py-2 text-sm font-semibold text-white bg-[#002D2B] rounded-lg hover:bg-[#004440] disabled:opacity-50"
+                            >
+                                {savingXero ? 'Saving...' : 'Save'}
                             </button>
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-import { openai } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
 import { z } from 'zod';
 
@@ -27,14 +27,17 @@ function extractJson(text: string): string {
 }
 
 export async function POST(req: Request) {
-    const hasKey = Boolean(process.env.OPENAI_API_KEY);
-    console.log('[parse-email] POST received, OPENAI_API_KEY present:', hasKey);
-    if (!hasKey) {
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    console.log('[parse-email] POST received, ANTHROPIC_API_KEY present:', Boolean(apiKey));
+    if (!apiKey) {
         return Response.json(
-            { error: 'OPENAI_API_KEY is not set. Add it to .env.local and restart the dev server.' },
+            {
+                error: 'ANTHROPIC_API_KEY is not set. Add it to ops-app/.env.local (e.g. ANTHROPIC_API_KEY=sk-ant-...) and restart the dev server from the ops-app folder (npm run dev).',
+            },
             { status: 500 }
         );
     }
+    const anthropic = createAnthropic({ apiKey });
     try {
         const body = await req.json();
         const text = body?.text;
@@ -42,9 +45,9 @@ export async function POST(req: Request) {
             console.log('[parse-email] Missing or invalid text');
             return Response.json({ error: 'Missing or invalid "text"' }, { status: 400 });
         }
-        console.log('[parse-email] Calling OpenAI...');
+        console.log('[parse-email] Calling Claude...');
         const { text: rawResponse } = await generateText({
-            model: openai('gpt-4o-mini'),
+            model: anthropic('claude-sonnet-4-20250514'),
             system: `You extract school uniform / bulk order line items and contact details from pasted emails.
 
 **Line items:** The email often lists a product name on one line, then one or more lines like "Size X x Y" meaning size X and quantity Y. Apply the product name to each following "Size X x Y" until the next product name or end of list.
@@ -87,11 +90,14 @@ export async function POST(req: Request) {
         });
     } catch (e) {
         const message = e instanceof Error ? e.message : 'Parse failed';
+        const status = e && typeof e === 'object' && 'status' in e ? (e as { status?: number }).status : undefined;
         console.error('[parse-email] Error:', message, e);
-        const friendlyMessage =
-            /^(model:|[\w.-]+)$/i.test(message) || /claude|haiku|gpt/i.test(message)
-                ? 'Parse failed. Check your AI API key in .env.local and try again.'
-                : message.slice(0, 300);
+        const isAuthError =
+            status === 401 || status === 403 ||
+            /authentication|invalid.*api.*key|invalid_key|unauthorized/i.test(message);
+        const friendlyMessage = isAuthError
+            ? 'Invalid or expired ANTHROPIC_API_KEY. Check the key in .env.local (ops-app folder) and restart the dev server.'
+            : message.slice(0, 400);
         return Response.json({ error: friendlyMessage }, { status: 500 });
     }
 }

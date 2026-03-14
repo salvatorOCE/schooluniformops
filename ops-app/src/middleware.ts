@@ -32,7 +32,7 @@ export function middleware(request: NextRequest) {
   const session = request.cookies.get(COOKIE_NAME)?.value;
 
   // School users (non-admin): only allow Orders, Recovery Center, Product list
-  const schoolAllowed = ['/orders', '/exceptions', '/products'];
+  const schoolAllowed = ['/orders', '/exceptions', '/products', '/school-runs'];
   if (session?.startsWith('school:')) {
     if (pathname === '/' || pathname === '/school-portal') {
       return NextResponse.redirect(new URL('/orders', request.url));

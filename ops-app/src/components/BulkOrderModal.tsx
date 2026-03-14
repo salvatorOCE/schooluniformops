@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Mail, Sparkles, FileDown, School } from 'lucide-react';
+import { X, Plus, Trash2, Mail, Sparkles, FileDown, School, Receipt, ExternalLink } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
 import { format } from 'date-fns';
 import { downloadBulkOrderInvoice } from '@/lib/generate-bulk-invoice-pdf';
@@ -11,6 +11,10 @@ interface BulkOrderModalProps {
     onSave: () => void;
     /** When set, modal opens in edit mode: load this order and save updates instead of creating. */
     orderId?: string | null;
+    /** When set (school mode), school is locked and create uses API. New orders default to "Needs Ordering". */
+    lockedSchoolId?: string;
+    /** When true, school user: locked school, API create, status options for bulk flow. */
+    schoolMode?: boolean;
 }
 
 interface SelectedItem {
@@ -23,12 +27,12 @@ interface SelectedItem {
     price: number;
 }
 
-export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps) {
+export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoolMode }: BulkOrderModalProps) {
     const adapter = useData();
     const [saving, setSaving] = useState(false);
     const [loadingOrder, setLoadingOrder] = useState(!!orderId);
 
-    const [schoolId, setSchoolId] = useState('');
+    const [schoolId, setSchoolId] = useState(lockedSchoolId || '');
     const [showCreateSchoolModal, setShowCreateSchoolModal] = useState(false);
     const [newSchoolName, setNewSchoolName] = useState('');
     const [newSchoolCode, setNewSchoolCode] = useState('');
@@ -37,7 +41,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
     const [orderNumber, setOrderNumber] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [studentName, setStudentName] = useState('');
-    const [orderStatus, setOrderStatus] = useState('Processing');
+    const [orderStatus, setOrderStatus] = useState(schoolMode ? 'Needs Ordering' : 'Processing');
     const [requestedDate, setRequestedDate] = useState(''); // Date order was asked for (YYYY-MM-DD)
 
     const [items, setItems] = useState<SelectedItem[]>([]);
@@ -49,9 +53,19 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
 
     const [schools, setSchools] = useState<{ id: string, name: string, code: string }[]>([]);
     const [products, setProducts] = useState<{ id: string, name: string, sku: string, price: number, sizes: string[] }[]>([]);
+    const [xeroMeta, setXeroMeta] = useState<{ xero_invoice_id?: string; xero_invoice_number?: string } | null>(null);
+    const [creatingXero, setCreatingXero] = useState(false);
+    const [xeroError, setXeroError] = useState<string | null>(null);
 
-    // Fetch schools on mount
     useEffect(() => {
+        if (lockedSchoolId) {
+            setSchoolId(lockedSchoolId);
+        }
+    }, [lockedSchoolId]);
+
+    // Fetch schools on mount (admin only)
+    useEffect(() => {
+        if (schoolMode) return;
         const loadSchools = async () => {
             try {
                 const data = await adapter.getSchools();
@@ -61,7 +75,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
             }
         };
         loadSchools();
-    }, [adapter]);
+    }, [adapter, schoolMode]);
 
     // Fetch products when school changes
     useEffect(() => {
@@ -84,6 +98,8 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
     useEffect(() => {
         if (!orderId) {
             setLoadingOrder(false);
+            setXeroMeta(null);
+            setXeroError(null);
             return;
         }
         let cancelled = false;
@@ -109,6 +125,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                 price: Number.isFinite(i.unit_price) ? i.unit_price! : 0
             }));
             setItems(loadedItems);
+            setXeroMeta(order.meta && typeof order.meta === 'object' ? { xero_invoice_id: (order.meta as any).xero_invoice_id, xero_invoice_number: (order.meta as any).xero_invoice_number } : null);
             const pd = order.meta?.partial_delivery;
             setPartialDelivery(
                 Array.from({ length: loadedItems.length }, (_, i) =>
@@ -231,7 +248,6 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
         setSaving(true);
         try {
             const finalSchoolId = schoolId;
-
             const delivered = items.map((item, i) =>
                 Math.min(Math.max(0, partialDelivery[i] ?? 0), Number.isFinite(item.quantity) ? item.quantity : 0)
             );
@@ -244,8 +260,35 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                 requestedAt: requestedDate || undefined,
                 partialDelivery: isPartialStatus ? delivered : []
             };
+
             if (orderId) {
                 await adapter.updateBulkOrder(orderId, finalSchoolId, orderDetails, items);
+            } else if (schoolMode) {
+                const res = await fetch('/api/bulk-orders/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        orderNumber,
+                        customerName,
+                        studentName,
+                        status: orderStatus,
+                        requestedAt: requestedDate || undefined,
+                        partialDelivery: isPartialStatus ? delivered : [],
+                        items: items.map(i => ({
+                            productId: i.productId,
+                            productName: i.productName,
+                            sku: i.sku,
+                            size: i.size,
+                            quantity: i.quantity,
+                            price: i.price
+                        }))
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Failed to create order');
+                }
             } else {
                 await adapter.createBulkOrder(finalSchoolId, orderDetails, items);
             }
@@ -293,19 +336,25 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                         <div className="flex items-center gap-3">
                             <label className="text-sm font-medium text-slate-700 shrink-0">Status</label>
                             <select
-                                className="border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium bg-white text-slate-900 min-w-[180px]"
+                                className="border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium bg-white text-slate-900 min-w-[180px] disabled:bg-slate-50 disabled:cursor-not-allowed"
                                 value={orderStatus}
                                 onChange={(e) => setOrderStatus(e.target.value)}
+                                disabled={schoolMode}
+                                title={schoolMode ? 'Status is updated by admin' : undefined}
                             >
+                                <option value="Needs Ordering">Needs Ordering</option>
+                                <option value="Garments Ordered">Garments Ordered</option>
                                 <option value="Processing">Processing</option>
                                 <option value="In Production">In Production</option>
                                 <option value="Partial Completion">Partial Completion</option>
                                 <option value="Partial Order Complete">Partial Order Complete</option>
                                 <option value="Completed">Completed</option>
                             </select>
+                            {schoolMode && <span className="text-xs text-slate-500">(updated by admin)</span>}
                         </div>
 
-                        {/* School Selection */}
+                        {/* School Selection — hidden when school mode */}
+                        {!schoolMode && (
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                             <div className="flex items-center justify-between mb-3">
                                 <label className="block text-sm font-medium text-slate-700">School Details</label>
@@ -328,6 +377,7 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                                 ))}
                             </select>
                         </div>
+                        )}
 
                         {/* Order Details */}
                         <div className="grid grid-cols-2 gap-4">
@@ -534,38 +584,90 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                             Total: ${calculateTotal().toFixed(2)}
                         </span>
                         {items.length > 0 && !loadingOrder && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const schoolName = schools.find(s => s.id === schoolId)?.name ?? '—';
-                                    const dateOrdered = requestedDate
-                                        ? format(new Date(requestedDate), 'dd MMM yyyy')
-                                        : format(new Date(), 'dd MMM yyyy');
-                                    downloadBulkOrderInvoice(
-                                        {
-                                            orderNumber: orderNumber || 'Draft',
-                                            dateOrdered,
-                                            schoolName,
-                                            customerName: customerName || '—',
-                                            department: studentName || undefined,
-                                            items: items.map(i => ({
-                                                productName: i.productName,
-                                                sku: i.sku,
-                                                size: i.size,
-                                                quantity: Number.isFinite(i.quantity) ? i.quantity : 0,
-                                                price: Number.isFinite(i.price) ? i.price : 0
-                                            }))
-                                        },
-                                        orderNumber ? `Invoice-${orderNumber}` : undefined
-                                    );
-                                }}
-                                className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 text-sm"
-                            >
-                                <FileDown className="w-4 h-4" />
-                                Download invoice
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const schoolName = schools.find(s => s.id === schoolId)?.name ?? '—';
+                                        const dateOrdered = requestedDate
+                                            ? format(new Date(requestedDate), 'dd MMM yyyy')
+                                            : format(new Date(), 'dd MMM yyyy');
+                                        downloadBulkOrderInvoice(
+                                            {
+                                                orderNumber: orderNumber || 'Draft',
+                                                dateOrdered,
+                                                schoolName,
+                                                customerName: customerName || '—',
+                                                department: studentName || undefined,
+                                                items: items.map(i => ({
+                                                    productName: i.productName,
+                                                    sku: i.sku,
+                                                    size: i.size,
+                                                    quantity: Number.isFinite(i.quantity) ? i.quantity : 0,
+                                                    price: Number.isFinite(i.price) ? i.price : 0
+                                                }))
+                                            },
+                                            orderNumber ? `Invoice-${orderNumber}` : undefined
+                                        );
+                                    }}
+                                    className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 text-sm"
+                                >
+                                    <FileDown className="w-4 h-4" />
+                                    Download invoice
+                                </button>
+                                {orderId && (
+                                    xeroMeta?.xero_invoice_id ? (
+                                        <a
+                                            href={`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${xeroMeta.xero_invoice_id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 text-sm"
+                                        >
+                                            <ExternalLink className="w-4 h-4" />
+                                            View in Xero {xeroMeta.xero_invoice_number && `(#${xeroMeta.xero_invoice_number})`}
+                                        </a>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            disabled={creatingXero}
+                                            onClick={async () => {
+                                                if (!orderId) return;
+                                                setXeroError(null);
+                                                setCreatingXero(true);
+                                                try {
+                                                    const res = await fetch('/api/xero/create-invoice', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        credentials: 'same-origin',
+                                                        body: JSON.stringify({ orderId }),
+                                                    });
+                                                    const data = await res.json().catch(() => ({}));
+                                                    if (!res.ok) {
+                                                        setXeroError(data.error || data.detail || `Request failed (${res.status})`);
+                                                        return;
+                                                    }
+                                                    setXeroMeta({ xero_invoice_id: data.xeroInvoiceId, xero_invoice_number: data.xeroInvoiceNumber });
+                                                    onSave();
+                                                    if (data.url) window.open(data.url, '_blank');
+                                                } catch (e) {
+                                                    setXeroError(e instanceof Error ? e.message : 'Failed to create Xero invoice');
+                                                } finally {
+                                                    setCreatingXero(false);
+                                                }
+                                            }}
+                                            className="btn bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 text-sm"
+                                        >
+                                            <Receipt className="w-4 h-4" />
+                                            {creatingXero ? 'Creating…' : 'Create Xero Invoice'}
+                                        </button>
+                                    )
+                                )}
+                            </>
                         )}
                     </div>
+                    {xeroError && (
+                        <p className="text-sm text-red-600 mt-1 w-full">{xeroError}</p>
+                    )}
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}
@@ -577,9 +679,9 @@ export function BulkOrderModal({ onClose, onSave, orderId }: BulkOrderModalProps
                         <button
                             onClick={handleSave}
                             className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                            disabled={saving || loadingOrder || !schoolId || items.length === 0}
+                            disabled={saving || loadingOrder || !schoolId || items.length === 0 || (schoolMode && !!orderId)}
                         >
-                            {saving ? (orderId ? 'Saving...' : 'Creating...') : (orderId ? 'Save changes' : 'Create Bulk Order')}
+                            {schoolMode && orderId ? 'View only' : saving ? (orderId ? 'Saving...' : 'Creating...') : (orderId ? 'Save changes' : 'Create Bulk Order')}
                         </button>
                     </div>
                 </div>

@@ -19,8 +19,34 @@ function getWooClient() {
     return new WooCommerceRestApi({ url, consumerKey, consumerSecret, version: 'wc/v3' });
 }
 
+/** Build a minimal order-details payload from Supabase row (for non-Woo orders or when Woo fetch fails). */
+async function buildFallbackOrder(orderUuid: string): Promise<Record<string, unknown> | null> {
+    if (!supabaseAdmin) return null;
+    const { data: row, error } = await supabaseAdmin
+        .from('orders')
+        .select('created_at, paid_at, status, shipping_address, order_number, customer_name, student_name')
+        .eq('id', orderUuid)
+        .single();
+    if (error || !row) return null;
+    const created = (row as { created_at?: string })?.created_at;
+    const paid = (row as { paid_at?: string | null })?.paid_at;
+    const shipping = (row as { shipping_address?: unknown })?.shipping_address as Record<string, unknown> | undefined;
+    return {
+        date_created: created ?? undefined,
+        date_modified: paid ?? created ?? undefined,
+        date_paid: paid ?? undefined,
+        status: (row as { status?: string })?.status ?? 'Processing',
+        order_number: (row as { order_number?: string })?.order_number,
+        billing: undefined,
+        shipping: shipping && typeof shipping === 'object' ? shipping : undefined,
+        payment_method_title: 'School / Bulk order',
+        total: undefined,
+        customer_note: undefined,
+    };
+}
+
 /** GET /api/woo/order-details?orderId=<supabase-order-uuid|order_number>
- * Fetches full WooCommerce order (billing, shipping, dates, payment, line items, etc.) for the given Supabase order id or order number.
+ * Fetches full WooCommerce order when linked; otherwise returns minimal details from Supabase (e.g. bulk/school orders).
  */
 export async function GET(req: NextRequest) {
     const orderId = req.nextUrl.searchParams.get('orderId');
@@ -30,11 +56,6 @@ export async function GET(req: NextRequest) {
 
     if (!supabaseAdmin) {
         return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
-    }
-
-    const woo = getWooClient();
-    if (!woo) {
-        return NextResponse.json({ error: 'WooCommerce not configured' }, { status: 502 });
     }
 
     try {
@@ -49,13 +70,31 @@ export async function GET(req: NextRequest) {
             .eq('id', orderUuid)
             .single();
 
-        if (error || !orderRow?.woo_order_id) {
-            return NextResponse.json({ error: 'Order not found or not linked to WooCommerce' }, { status: 404 });
+        if (error) {
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
-        const response = await woo.get(`orders/${orderRow.woo_order_id}`);
+        const wooOrderId = orderRow?.woo_order_id;
+        const isFakeOrMissing = wooOrderId == null || (typeof wooOrderId === 'number' && wooOrderId < 1);
+
+        if (isFakeOrMissing) {
+            const fallback = await buildFallbackOrder(orderUuid);
+            if (fallback) return NextResponse.json(fallback);
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        }
+
+        const woo = getWooClient();
+        if (!woo) {
+            const fallback = await buildFallbackOrder(orderUuid);
+            if (fallback) return NextResponse.json(fallback);
+            return NextResponse.json({ error: 'WooCommerce not configured' }, { status: 502 });
+        }
+
+        const response = await woo.get(`orders/${wooOrderId}`);
         const order = response.data;
         if (!order) {
+            const fallback = await buildFallbackOrder(orderUuid);
+            if (fallback) return NextResponse.json(fallback);
             return NextResponse.json({ error: 'WooCommerce order not found' }, { status: 404 });
         }
 
@@ -74,6 +113,15 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(order);
     } catch (err: any) {
         console.error('Order details fetch error:', err?.response?.data || err);
+        try {
+            const orderUuid = await resolveOrderUuid(orderId);
+            if (orderUuid) {
+                const fallback = await buildFallbackOrder(orderUuid);
+                if (fallback) return NextResponse.json(fallback);
+            }
+        } catch (_) {
+            // ignore
+        }
         return NextResponse.json(
             { error: err?.response?.data?.message || err?.message || 'Failed to fetch order details' },
             { status: 500 }

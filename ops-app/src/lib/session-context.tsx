@@ -7,6 +7,7 @@ export type SessionRole = 'admin' | 'school' | null;
 interface SessionContextType {
   role: SessionRole;
   schoolCode: string | null;
+  schoolId: string | null;
   loading: boolean;
   refetch: () => Promise<void>;
 }
@@ -16,6 +17,7 @@ const SessionContext = createContext<SessionContextType | undefined>(undefined);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<SessionRole>(null);
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
+  const [schoolId, setSchoolId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchSession = async () => {
@@ -24,9 +26,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json().catch(() => ({}));
       setRole(data.role ?? null);
       setSchoolCode(data.schoolCode ?? null);
+      setSchoolId(data.schoolId ?? null);
     } catch {
       setRole(null);
       setSchoolCode(null);
+      setSchoolId(null);
     } finally {
       setLoading(false);
     }
@@ -37,7 +41,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <SessionContext.Provider value={{ role, schoolCode, loading, refetch: fetchSession }}>
+    <SessionContext.Provider value={{ role, schoolCode, schoolId, loading, refetch: fetchSession }}>
       {children}
     </SessionContext.Provider>
   );

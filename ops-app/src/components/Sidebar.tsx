@@ -15,13 +15,18 @@ import {
     Clock,
     Bot,
     ChevronRight,
+    ChevronDown,
     Settings,
     Calendar,
     Search,
     LogOut,
     StickyNote,
     ListOrdered,
-    Building2
+    Building2,
+    FileText,
+    Shirt,
+    ImageIcon,
+    LayoutTemplate
 } from 'lucide-react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useMobile } from '@/lib/mobile-context';
@@ -35,6 +40,12 @@ export interface NavItem {
     badge?: number;
 }
 
+export interface NavGroup {
+    label: string;
+    icon: React.ElementType;
+    items: NavItem[];
+}
+
 /** Important Notes — pinned at top for all modules */
 export const importantNotesNavItem: NavItem = {
     href: '/important-notes',
@@ -42,9 +53,56 @@ export const importantNotesNavItem: NavItem = {
     icon: StickyNote,
 };
 
-/** Nav for school users (non-admin): Orders, Recovery Center, Product list only */
+/** Standalone modules (no dropdown): Important Notes, Production Schedule, Analytics */
+export const standaloneNavItems: NavItem[] = [
+    importantNotesNavItem,
+    { href: '/schedule', label: 'Production Schedule', icon: Calendar },
+    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+];
+
+/** Grouped nav: dropdown categories for admin. Calendar & Analytics stay standalone above. */
+export const mainNavGroups: NavGroup[] = [
+    {
+        label: 'Catalog',
+        icon: Building2,
+        items: [
+            { href: '/schools', label: 'All Schools', icon: Building2 },
+            { href: '/products', label: 'All Products', icon: ListOrdered },
+            { href: '/garment-library', label: 'Garment library', icon: Shirt },
+        ],
+    },
+    {
+        label: 'Orders & Fulfillment',
+        icon: Package,
+        items: [
+            { href: '/orders', label: 'Orders', icon: Clock },
+            { href: '/distribution', label: 'Distribution', icon: Package },
+            { href: '/school-runs', label: 'School Bulk', icon: Bus },
+            { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
+        ],
+    },
+    {
+        label: 'Proposals',
+        icon: FileText,
+        items: [
+            { href: '/proposals', label: 'Proposals', icon: FileText },
+            { href: '/proposals/templates', label: 'Templates', icon: LayoutTemplate },
+        ],
+    },
+    {
+        label: 'Content & Stock',
+        icon: ImageIcon,
+        items: [
+            { href: '/stitched-assets', label: 'Stitched assets', icon: ImageIcon },
+            { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
+        ],
+    },
+];
+
+/** Nav for school users (non-admin): Orders, Recovery Center, Product list, Bulk Order */
 export const schoolNavItems: NavItem[] = [
     { href: '/orders', label: 'Orders', icon: Clock },
+    { href: '/school-runs', label: 'Bulk Order', icon: Bus },
     { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
     { href: '/products', label: 'Product list', icon: ListOrdered },
 ];
@@ -75,6 +133,10 @@ export const mainNavItems: NavItem[] = [
     { href: '/distribution', label: 'Distribution', icon: Package },
     { href: '/school-runs', label: 'School Bulk', icon: Bus },
     { href: '/exceptions', label: 'Recovery Center', icon: AlertTriangle },
+    { href: '/proposals', label: 'Proposals', icon: FileText },
+    { href: '/proposals/templates', label: 'Templates', icon: LayoutTemplate },
+    { href: '/garment-library', label: 'Garment library', icon: Shirt },
+    { href: '/stitched-assets', label: 'Stitched assets', icon: ImageIcon },
     { href: '/digital-stock', label: 'Digital In-House Stock', icon: Package },
     { href: '/products', label: 'All Products', icon: ListOrdered },
     { href: '/schools', label: 'All Schools', icon: Building2 },
@@ -100,6 +162,19 @@ export function Sidebar() {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean, message: string } | null>(null);
     const [showSettings, setShowSettings] = useState(false);
+    // Which nav groups are expanded (index -> boolean). Default: open if any child is active.
+    const [groupOpen, setGroupOpen] = useState<Record<number, boolean>>({});
+    const isGroupOpen = (i: number) => {
+        if (groupOpen[i] !== undefined) return groupOpen[i];
+        const group = mainNavGroups[i];
+        if (!group) return false;
+        const hasActive = group.items.some(
+            (item) => pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/')
+        );
+        return hasActive;
+    };
+    const setGroupOpenAt = (i: number, open: boolean) =>
+        setGroupOpen((prev) => ({ ...prev, [i]: open }));
 
     const handleManualSync = async (fullSync = false) => {
         if (fullSync && !confirm('Full re-sync will fetch ALL orders from WooCommerce. This may take a minute. Continue?')) {
@@ -125,7 +200,7 @@ export function Sidebar() {
                     message: data.count > 0 ? `Updated ${data.count} order${data.count > 1 ? 's' : ''}` : 'All up to date ✓'
                 });
             } else {
-                setSyncResult({ success: false, message: data.error || 'Sync failed' });
+                setSyncResult({ success: false, message: data.hint ? `${data.error || 'Sync failed'}. ${data.hint}` : (data.error || 'Sync failed') });
             }
         } catch (err) {
             setSyncResult({ success: false, message: 'Network error' });
@@ -202,38 +277,98 @@ export function Sidebar() {
                 <div className="space-y-1">
                     {sessionLoading ? (
                         <div className="px-3 py-2.5 text-emerald-200/80 text-sm animate-pulse">Loading…</div>
-                    ) : (isSchool ? schoolNavItems : mainNavItems).map((item) => {
-                        const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
-                        const isRecovery = item.href === '/exceptions';
-                        const showBadge = isRecovery && recoveryCount > 0;
-
-                        return (
-                            <Link
-                                key={item.href}
-                                href={item.href}
-                                className={cn(
-                                    'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
-                                    isActive
-                                        ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium'
-                                        : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
-                                )}
-                            >
-                                <item.icon className={cn(
-                                    "w-4 h-4 transition-colors",
-                                    isActive ? "text-white" : "text-emerald-400/70 group-hover:text-emerald-300"
-                                )} />
-                                <span className="flex-1 text-sm tracking-wide">{item.label}</span>
-
-                                {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
-
-                                {showBadge && (
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                                        {recoveryCount}
-                                    </span>
-                                )}
-                            </Link>
-                        );
-                    })}
+                    ) : isSchool ? (
+                        schoolNavItems.map((item) => {
+                            const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
+                            const isRecovery = item.href === '/exceptions';
+                            const showBadge = isRecovery && recoveryCount > 0;
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
+                                        isActive ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium' : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
+                                    )}
+                                >
+                                    <item.icon className={cn('w-4 h-4 transition-colors', isActive ? 'text-white' : 'text-emerald-400/70 group-hover:text-emerald-300')} />
+                                    <span className="flex-1 text-sm tracking-wide">{item.label}</span>
+                                    {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
+                                    {showBadge && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">{recoveryCount}</span>
+                                    )}
+                                </Link>
+                            );
+                        })
+                    ) : (
+                        <>
+                            {standaloneNavItems.map((item) => {
+                                const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
+                                return (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        className={cn(
+                                            'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
+                                            isActive ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium' : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
+                                        )}
+                                    >
+                                        <item.icon className={cn('w-4 h-4 transition-colors', isActive ? 'text-white' : 'text-emerald-400/70 group-hover:text-emerald-300')} />
+                                        <span className="flex-1 text-sm tracking-wide">{item.label}</span>
+                                        {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
+                                    </Link>
+                                );
+                            })}
+                            {mainNavGroups.map((group, idx) => {
+                                const open = isGroupOpen(idx);
+                                const hasActiveChild = group.items.some(
+                                    (item) => pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/')
+                                );
+                                return (
+                                    <div key={idx} className="space-y-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setGroupOpenAt(idx, !open)}
+                                            className={cn(
+                                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 text-left',
+                                                hasActiveChild ? 'text-emerald-200 bg-[#003836]/60' : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
+                                            )}
+                                        >
+                                            <group.icon className="w-4 h-4 text-emerald-400/70 shrink-0" />
+                                            <span className="flex-1 text-sm tracking-wide font-medium">{group.label}</span>
+                                            {open ? <ChevronDown className="w-4 h-4 text-emerald-400/70 shrink-0" /> : <ChevronRight className="w-4 h-4 text-emerald-400/70 shrink-0" />}
+                                        </button>
+                                        {open && (
+                                            <div className="pl-4 ml-2 border-l border-[#004440] space-y-0.5">
+                                                {group.items.map((item) => {
+                                                    const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/');
+                                                    const isRecovery = item.href === '/exceptions';
+                                                    const showBadge = isRecovery && recoveryCount > 0;
+                                                    return (
+                                                        <Link
+                                                            key={item.href}
+                                                            href={item.href}
+                                                            className={cn(
+                                                                'flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative',
+                                                                isActive ? 'bg-[#19966D] text-white shadow-md shadow-emerald-900/20 font-medium' : 'text-emerald-100/70 hover:bg-[#003836] hover:text-white'
+                                                            )}
+                                                        >
+                                                            <item.icon className={cn('w-4 h-4 transition-colors', isActive ? 'text-white' : 'text-emerald-400/70 group-hover:text-emerald-300')} />
+                                                            <span className="flex-1 text-sm tracking-wide">{item.label}</span>
+                                                            {isActive && <ChevronRight className="w-3 h-3 text-emerald-200" />}
+                                                            {showBadge && (
+                                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">{recoveryCount}</span>
+                                                            )}
+                                                        </Link>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </>
+                    )}
                 </div>
 
                 {/* Work in progress — bottom section (admin only); hide while session loading */}

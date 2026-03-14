@@ -40,8 +40,8 @@ export function EnvBanner() {
                 <p className="mt-1 text-amber-800">
                     Set <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_SUPABASE_URL</code>,{' '}
                     <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, and{' '}
-                    <code className="rounded bg-amber-100 px-1">SUPABASE_SERVICE_ROLE_KEY</code> in Netlify
-                    (Site configuration → Environment variables), then trigger a new deploy.
+                    <code className="rounded bg-amber-100 px-1">SUPABASE_SERVICE_ROLE_KEY</code> in{' '}
+                    <code className="rounded bg-amber-100 px-1">.env.local</code> for local dev (restart the dev server after changing), or in Netlify (Site configuration → Environment variables) for deploy.
                 </p>
             </div>
             <button
