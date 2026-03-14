@@ -42,7 +42,7 @@ export async function PATCH(
     name?: string;
     manufacturer_name?: string | null;
     code?: string | null;
-    price?: number | null;
+    price?: number | string | null;
     garment_type?: string | null;
     extra?: Record<string, unknown>;
   };
@@ -55,7 +55,10 @@ export async function PATCH(
   if (body.name !== undefined) updates.name = body.name.trim();
   if (body.manufacturer_name !== undefined) updates.manufacturer_name = body.manufacturer_name === '' || body.manufacturer_name === null ? null : body.manufacturer_name;
   if (body.code !== undefined) updates.code = body.code === '' || body.code === null ? null : body.code;
-  if (body.price !== undefined) updates.price = body.price === '' || body.price === null ? null : Number(body.price);
+  if (body.price !== undefined) {
+    const p = body.price;
+    updates.price = (p === '' || p === null || (typeof p === 'string' && p.trim() === '')) ? null : Number(p);
+  }
   if (body.garment_type !== undefined) updates.garment_type = body.garment_type === '' || body.garment_type === null ? null : body.garment_type;
   if (body.extra !== undefined) updates.extra = body.extra && typeof body.extra === 'object' ? body.extra : {};
   if (Object.keys(updates).length === 0) {
