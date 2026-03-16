@@ -21,6 +21,8 @@ function mapRow(row: Record<string, unknown>): Proposal {
         created_at: String(row.created_at),
         updated_at: String(row.updated_at),
         sent_at: row.sent_at != null ? String(row.sent_at) : null,
+        reply_text: row.reply_text != null ? String(row.reply_text) : null,
+        reply_at: row.reply_at != null ? String(row.reply_at) : null,
     };
 }
 

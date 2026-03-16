@@ -51,8 +51,9 @@ export default function SchoolBulkPage() {
 
     // Supabase realtime: subscribe to orders changes (status updates appear live)
     useEffect(() => {
-        if (!supabase) return;
-        const channel = supabase
+        const client = supabase;
+        if (!client) return;
+        const channel = client
             .channel('bulk-orders-changes')
             .on(
                 'postgres_changes',
@@ -66,7 +67,7 @@ export default function SchoolBulkPage() {
             )
             .subscribe();
         return () => {
-            supabase.removeChannel(channel);
+            client.removeChannel(channel);
         };
     }, [loadOrders]);
 

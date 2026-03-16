@@ -452,6 +452,7 @@ export class SupabaseAdapter implements DataAdapter {
             manufacturer_id_kids: p.manufacturer_id_kids ?? null,
             manufacturer_id_adult: p.manufacturer_id_adult ?? null,
             manufacturer_product: p.manufacturer_product ?? null,
+            manufacturer_garment_id: p.manufacturer_garment_id ?? null,
             is_available_for_sale: p.is_available_for_sale !== false,
             cost: p.cost != null ? Number(p.cost) : null,
             embroidery_print_cost: p.embroidery_print_cost != null ? Number(p.embroidery_print_cost) : null,
@@ -1805,6 +1806,8 @@ export class SupabaseAdapter implements DataAdapter {
             created_at: row.created_at,
             updated_at: row.updated_at,
             sent_at: row.sent_at ?? null,
+            reply_text: row.reply_text ?? null,
+            reply_at: row.reply_at ?? null,
         };
     }
 }

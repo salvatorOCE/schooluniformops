@@ -1275,9 +1275,9 @@ export class MockAdapter implements DataAdapter {
 
     async getAllProducts(): Promise<import('./types').ProductListRow[]> {
         const rows: import('./types').ProductListRow[] = [
-            { id: 'prod-1', sku: 'POLO-NVY', name: 'Polo Shirt', category: "St Mary's", price: 35, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: [{ name: 'Size', options: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] }], sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1001, manufacturer_name: 'AUSSIE PACIFIC', manufacturer_id: null, manufacturer_id_kids: '3307', manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: true, cost: 18, embroidery_print_cost: 5, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-            { id: 'prod-2', sku: 'DRESS-NVY', name: 'Dress', category: "St Mary's", price: 65, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1002, manufacturer_name: null, manufacturer_id: null, manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: null, is_available_for_sale: false, cost: null, embroidery_print_cost: null, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-            { id: 'prod-3', sku: 'POLO-TEAL', name: 'Polo Shirt', category: 'Flaxmill', price: 35, requires_embroidery: true, school_id: 'FLAXMILL', school_code: 'FLAXMILL', school_name: 'Flaxmill School', attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1003, manufacturer_name: 'WinningSpirit', manufacturer_id: 'FL02', manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: 'Half Zip Fleece', is_available_for_sale: true, cost: 22, embroidery_print_cost: 4, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-1', sku: 'POLO-NVY', name: 'Polo Shirt', category: "St Mary's", price: 35, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: [{ name: 'Size', options: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'] }], sizes: ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL'], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1001, manufacturer_name: 'AUSSIE PACIFIC', manufacturer_id: null, manufacturer_id_kids: '3307', manufacturer_id_adult: null, manufacturer_product: null, manufacturer_garment_id: null, is_available_for_sale: true, cost: 18, embroidery_print_cost: 5, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-2', sku: 'DRESS-NVY', name: 'Dress', category: "St Mary's", price: 65, requires_embroidery: true, school_id: 'STMARY', school_code: 'STMARY', school_name: "St Mary's College", attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1002, manufacturer_name: null, manufacturer_id: null, manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: null, manufacturer_garment_id: null, is_available_for_sale: false, cost: null, embroidery_print_cost: null, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            { id: 'prod-3', sku: 'POLO-TEAL', name: 'Polo Shirt', category: 'Flaxmill', price: 35, requires_embroidery: true, school_id: 'FLAXMILL', school_code: 'FLAXMILL', school_name: 'Flaxmill School', attributes: null, sizes: [], stock_on_shelf: {}, stock_in_transit: {}, woocommerce_id: 1003, manufacturer_name: 'WinningSpirit', manufacturer_id: 'FL02', manufacturer_id_kids: null, manufacturer_id_adult: null, manufacturer_product: 'Half Zip Fleece', manufacturer_garment_id: null, is_available_for_sale: true, cost: 22, embroidery_print_cost: 4, xero_item_code: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         ];
         return rows;
     }
@@ -1309,6 +1309,7 @@ export class MockAdapter implements DataAdapter {
             manufacturer_id_kids: payload.manufacturer_id_kids ?? null,
             manufacturer_id_adult: payload.manufacturer_id_adult ?? null,
             manufacturer_product: null,
+            manufacturer_garment_id: null,
             is_available_for_sale: false,
             cost: null,
             embroidery_print_cost: null,
@@ -1416,6 +1417,8 @@ export class MockAdapter implements DataAdapter {
             created_at: now,
             updated_at: now,
             sent_at: proposal.sent_at ?? null,
+            reply_text: (proposal as import('./types').Proposal).reply_text ?? null,
+            reply_at: (proposal as import('./types').Proposal).reply_at ?? null,
         };
         mockProposals.push(created);
         return created;

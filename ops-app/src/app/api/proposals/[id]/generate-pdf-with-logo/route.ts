@@ -114,13 +114,14 @@ export async function POST(
     if (!supabaseAdmin) {
         return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
     }
+    const admin = supabaseAdmin;
     const { id } = await params;
     if (!id) {
         return NextResponse.json({ error: 'Proposal ID required' }, { status: 400 });
     }
 
     try {
-        const { data: proposalRow, error: fetchErr } = await supabaseAdmin
+        const { data: proposalRow, error: fetchErr } = await admin
             .from(TABLE)
             .select('*')
             .eq('id', id)
@@ -138,7 +139,7 @@ export async function POST(
         // Use template PDF as source so we never stack generations (always start from clean template)
         let sourcePdfUrl: string | null = null;
         if (proposal.template_id) {
-            const { data: templateRow } = await supabaseAdmin
+            const { data: templateRow } = await admin
                 .from('proposal_templates')
                 .select('pdf_url')
                 .eq('id', proposal.template_id)
@@ -203,10 +204,10 @@ export async function POST(
         };
         const uploadTemp = async (buf: Buffer, name: string) => {
             const path = `temp/${id}/${Date.now()}-${name}.png`;
-            await supabaseAdmin.storage
+            await admin.storage
                 .from(PROPOSAL_PDF_BUCKET)
                 .upload(path, buf, { contentType: 'image/png', upsert: true });
-            const { data } = supabaseAdmin.storage.from(PROPOSAL_PDF_BUCKET).getPublicUrl(path);
+            const { data } = admin.storage.from(PROPOSAL_PDF_BUCKET).getPublicUrl(path);
             return data.publicUrl;
         };
         const hybridOptions: HybridOptions = {
@@ -237,15 +238,15 @@ export async function POST(
         // Versioned path so each generation gets a new URL (no cache, and keeps history in storage)
         const version = Date.now();
         const uploadPath = `${id}/${version}.pdf`;
-        const { error: uploadError } = await supabaseAdmin.storage
+        const { error: uploadError } = await admin.storage
             .from(PROPOSAL_PDF_BUCKET)
             .upload(uploadPath, newPdfBuffer, { upsert: true, contentType: 'application/pdf' });
         if (uploadError) {
             console.error('Generate PDF upload error:', uploadError);
             return NextResponse.json({ error: uploadError.message || 'Upload failed' }, { status: 500 });
         }
-        const { data: urlData } = supabaseAdmin.storage.from(PROPOSAL_PDF_BUCKET).getPublicUrl(uploadPath);
-        const { data: updated, error: updateErr } = await supabaseAdmin
+        const { data: urlData } = admin.storage.from(PROPOSAL_PDF_BUCKET).getPublicUrl(uploadPath);
+        const { data: updated, error: updateErr } = await admin
             .from(TABLE)
             .update({ pdf_url: urlData.publicUrl, updated_at: new Date().toISOString() })
             .eq('id', id)
