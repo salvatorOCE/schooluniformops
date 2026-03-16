@@ -7,6 +7,8 @@ export type UserRole = 'EMBROIDER' | 'DISTRIBUTION' | 'ADMIN';
 
 export interface OrderItem {
   id: string;
+  /** Product UUID (for bulk orders; links to products table). */
+  product_id?: string | null;
   product_name: string;
   sku: string;
   quantity: number;
@@ -183,6 +185,8 @@ export interface Order {
     xero_tenant_id?: string;
     /** 'admin' = Created order; 'school' = School placed order */
     order_source?: 'admin' | 'school';
+    /** Log of status changes (bulk orders): when status was set to what. Newest first when displayed. */
+    status_changes?: { status: string; at: string }[];
   };
 
   // Senior Order Specifics

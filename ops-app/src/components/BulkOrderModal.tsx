@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Mail, Sparkles, FileDown, School, Receipt, ExternalLink } from 'lucide-react';
+import { X, Plus, Trash2, Mail, Sparkles, FileDown, School, Receipt, ExternalLink, Clock } from 'lucide-react';
 import { useData } from '@/lib/data-provider';
 import { format } from 'date-fns';
 import { downloadBulkOrderInvoice } from '@/lib/generate-bulk-invoice-pdf';
@@ -41,7 +41,7 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
     const [orderNumber, setOrderNumber] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [studentName, setStudentName] = useState('');
-    const [orderStatus, setOrderStatus] = useState(schoolMode ? 'Needs Ordering' : 'Processing');
+    const [orderStatus, setOrderStatus] = useState('Needs Ordering');
     const [requestedDate, setRequestedDate] = useState(''); // Date order was asked for (YYYY-MM-DD)
 
     const [items, setItems] = useState<SelectedItem[]>([]);
@@ -56,6 +56,8 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
     const [xeroMeta, setXeroMeta] = useState<{ xero_invoice_id?: string; xero_invoice_number?: string } | null>(null);
     const [creatingXero, setCreatingXero] = useState(false);
     const [xeroError, setXeroError] = useState<string | null>(null);
+    /** Status change log (when status was set to what). Loaded with order; updated after save. */
+    const [statusChanges, setStatusChanges] = useState<{ status: string; at: string }[]>([]);
 
     useEffect(() => {
         if (lockedSchoolId) {
@@ -100,6 +102,7 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
             setLoadingOrder(false);
             setXeroMeta(null);
             setXeroError(null);
+            setStatusChanges([]);
             return;
         }
         let cancelled = false;
@@ -117,7 +120,7 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
             setRequestedDate(order.meta?.order_requested_at || '');
             const loadedItems = order.items.map((i) => ({
                 id: i.id,
-                productId: '',
+                productId: i.product_id ?? '',
                 productName: i.product_name || '',
                 sku: i.sku || '',
                 size: i.size || '',
@@ -126,6 +129,7 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
             }));
             setItems(loadedItems);
             setXeroMeta(order.meta && typeof order.meta === 'object' ? { xero_invoice_id: (order.meta as any).xero_invoice_id, xero_invoice_number: (order.meta as any).xero_invoice_number } : null);
+            setStatusChanges(Array.isArray((order.meta as any)?.status_changes) ? (order.meta as any).status_changes : []);
             const pd = order.meta?.partial_delivery;
             setPartialDelivery(
                 Array.from({ length: loadedItems.length }, (_, i) =>
@@ -262,7 +266,8 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
             };
 
             if (orderId) {
-                await adapter.updateBulkOrder(orderId, finalSchoolId, orderDetails, items);
+                const updated = await adapter.updateBulkOrder(orderId, finalSchoolId, orderDetails, items);
+                if (Array.isArray((updated.meta as any)?.status_changes)) setStatusChanges((updated.meta as any).status_changes);
             } else if (schoolMode) {
                 const res = await fetch('/api/bulk-orders/create', {
                     method: 'POST',
@@ -313,7 +318,7 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
 
     return (
         <div className="fixed inset-0 bg-slate-900/50 flex flex-col items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh]">
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-slate-100">
@@ -352,6 +357,26 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
                             </select>
                             {schoolMode && <span className="text-xs text-slate-500">(updated by admin)</span>}
                         </div>
+
+                        {/* Status change history (when editing and we have log entries) */}
+                        {orderId && statusChanges.length > 0 && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/50 overflow-hidden">
+                                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-white/80">
+                                    <Clock className="w-4 h-4 text-slate-500" />
+                                    <span className="text-sm font-medium text-slate-700">Status history</span>
+                                </div>
+                                <ul className="divide-y divide-slate-100 max-h-32 overflow-y-auto">
+                                    {statusChanges.map((entry, i) => (
+                                        <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                                            <span className="font-medium text-slate-800">{entry.status}</span>
+                                            <span className="text-slate-500 tabular-nums">
+                                                {format(new Date(entry.at), 'd MMM yyyy, HH:mm')}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
 
                         {/* School Selection — hidden when school mode */}
                         {!schoolMode && (
@@ -450,128 +475,168 @@ export function BulkOrderModal({ onClose, onSave, orderId, lockedSchoolId, schoo
                             </div>
                         </div>
 
-                        {/* Order Items */}
-                        <div>
-                            <div className="flex items-center justify-between mb-3">
-                                <label className="block text-sm font-medium text-slate-700">Order Items</label>
-                                <button onClick={addItem} className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1">
-                                    <Plus className="w-4 h-4" /> Add Line Item
+                        {/* Order Items / Invoice list */}
+                        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                                <div className="flex items-center gap-2">
+                                    <Receipt className="w-5 h-5 text-emerald-600" />
+                                    <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">Order Items / Invoice List</h3>
+                                </div>
+                                <button
+                                    onClick={addItem}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors"
+                                >
+                                    <Plus className="w-4 h-4" /> Add line
                                 </button>
                             </div>
 
-                            <div className="space-y-3">
-                                {items.length === 0 ? (
-                                    <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl">
-                                        <p className="text-slate-500 mb-2">No items added yet</p>
-                                        <button onClick={addItem} className="btn bg-white border shadow-sm">
-                                            Add First Item
-                                        </button>
+                            {items.length === 0 ? (
+                                <div className="p-12 text-center">
+                                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-slate-100 text-slate-400 mb-4">
+                                        <Receipt className="w-7 h-7" />
                                     </div>
-                                ) : (
-                                    items.map((item, index) => (
-                                        <div key={item.id} className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                            <div className="flex-1">
-                                                <label className="block text-xs text-slate-500 mb-1">Template</label>
-                                                <select
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5"
-                                                    value={item.productId}
-                                                    onChange={(e) => {
-                                                        const p = products.find(p => p.id === e.target.value);
-                                                        updateItem(item.id, {
-                                                            productId: e.target.value,
-                                                            productName: p?.name || '',
-                                                            sku: p?.sku || '',
-                                                            price: p?.price || 0
-                                                        });
-                                                    }}
+                                    <p className="text-slate-600 font-medium mb-1">No items yet</p>
+                                    <p className="text-slate-500 text-sm mb-4">Add garments to build your invoice list.</p>
+                                    <button onClick={addItem} className="btn bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                                        <Plus className="w-4 h-4 inline mr-1.5" /> Add first item
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-200">
+                                                <th className="text-left py-3 px-4 font-semibold text-slate-600 uppercase tracking-wider text-xs">Product</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-slate-600 uppercase tracking-wider text-xs">Item name</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-slate-600 uppercase tracking-wider text-xs">SKU</th>
+                                                <th className="text-center py-3 px-3 font-semibold text-slate-600 uppercase tracking-wider text-xs w-20">Size</th>
+                                                <th className="text-center py-3 px-3 font-semibold text-slate-600 uppercase tracking-wider text-xs w-20">Qty</th>
+                                                <th className="text-right py-3 px-4 font-semibold text-slate-600 uppercase tracking-wider text-xs w-24">Unit price</th>
+                                                {(orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete') && (
+                                                    <th className="text-center py-3 px-3 font-semibold text-slate-600 uppercase tracking-wider text-xs w-20">Sent</th>
+                                                )}
+                                                <th className="w-12 py-3 px-2" aria-label="Remove" />
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {items.map((item, index) => (
+                                                <tr
+                                                    key={item.id}
+                                                    className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors even:bg-slate-50/30"
                                                 >
-                                                    <option value="">Custom</option>
-                                                    {products.map(p => (
-                                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="flex-[1.5]">
-                                                <label className="block text-xs text-slate-500 mb-1">Item Name</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Name"
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5"
-                                                    value={item.productName}
-                                                    onChange={(e) => updateItem(item.id, { productName: e.target.value })}
-                                                />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label className="block text-xs text-slate-500 mb-1">SKU</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="SKU"
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5"
-                                                    value={item.sku}
-                                                    onChange={(e) => updateItem(item.id, { sku: e.target.value })}
-                                                />
-                                            </div>
-                                            <div className="w-16">
-                                                <label className="block text-xs text-slate-500 mb-1">Size</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Size"
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5"
-                                                    value={item.size}
-                                                    onChange={(e) => updateItem(item.id, { size: e.target.value })}
-                                                />
-                                            </div>
-                                            <div className="w-16">
-                                                <label className="block text-xs text-slate-500 mb-1">Qty</label>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5 px-2"
-                                                    value={Number.isFinite(item.quantity) ? item.quantity : 1}
-                                                    onChange={(e) => updateItem(item.id, { quantity: parseInt(e.target.value, 10) || 1 })}
-                                                />
-                                            </div>
-                                            <div className="w-20">
-                                                <label className="block text-xs text-slate-500 mb-1">Price</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="w-full border-slate-200 rounded text-sm py-1.5 px-2"
-                                                    value={Number.isFinite(item.price) ? item.price : 0}
-                                                    onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
-                                                />
-                                            </div>
-                                            {(orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete') && (
-                                                <div className="w-20">
-                                                    <label className="block text-xs text-slate-500 mb-1">Sent</label>
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={Number.isFinite(item.quantity) ? item.quantity : 0}
-                                                        className="w-full border-slate-200 rounded text-sm py-1.5 px-2 bg-amber-50/80"
-                                                        value={Math.min(partialDelivery[index] ?? 0, item.quantity)}
-                                                        onChange={(e) => {
-                                                            const v = parseInt(e.target.value, 10);
-                                                            if (!Number.isFinite(v)) return;
-                                                            const next = [...partialDelivery];
-                                                            while (next.length <= index) next.push(0);
-                                                            next[index] = Math.max(0, Math.min(v, item.quantity));
-                                                            setPartialDelivery(next);
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                            <button
-                                                onClick={() => removeItem(item.id)}
-                                                className="p-2 text-red-500 hover:bg-red-50 rounded"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
+                                                    <td className="py-2.5 px-4">
+                                                        <select
+                                                            className="w-full min-w-[120px] border border-slate-200 rounded-md text-sm py-1.5 px-2 bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={item.productId}
+                                                            onChange={(e) => {
+                                                                const p = products.find(p => p.id === e.target.value);
+                                                                updateItem(item.id, {
+                                                                    productId: e.target.value,
+                                                                    productName: p?.name || '',
+                                                                    sku: p?.sku || '',
+                                                                    price: p?.price || 0
+                                                                });
+                                                            }}
+                                                        >
+                                                            <option value="">Custom</option>
+                                                            {products.map(p => (
+                                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="py-2.5 px-4">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Name"
+                                                            className="w-full min-w-[140px] border border-slate-200 rounded-md text-sm py-1.5 px-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={item.productName}
+                                                            onChange={(e) => updateItem(item.id, { productName: e.target.value })}
+                                                        />
+                                                    </td>
+                                                    <td className="py-2.5 px-4">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="SKU"
+                                                            className="w-full min-w-[80px] border border-slate-200 rounded-md text-sm py-1.5 px-2 font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={item.sku}
+                                                            onChange={(e) => updateItem(item.id, { sku: e.target.value })}
+                                                        />
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="—"
+                                                            className="w-full max-w-[4rem] mx-auto border border-slate-200 rounded-md text-sm py-1.5 px-2 text-center focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={item.size}
+                                                            onChange={(e) => updateItem(item.id, { size: e.target.value })}
+                                                        />
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            className="w-full max-w-[4rem] mx-auto border border-slate-200 rounded-md text-sm py-1.5 px-2 text-center focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={Number.isFinite(item.quantity) ? item.quantity : 1}
+                                                            onChange={(e) => updateItem(item.id, { quantity: parseInt(e.target.value, 10) || 1 })}
+                                                        />
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            step={0.01}
+                                                            className="w-full max-w-[5rem] ml-auto border border-slate-200 rounded-md text-sm py-1.5 px-2 text-right tabular-nums focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            value={Number.isFinite(item.price) ? item.price : 0}
+                                                            onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                                        />
+                                                    </td>
+                                                    {(orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete') && (
+                                                        <td className="py-2.5 px-3 text-center">
+                                                            <input
+                                                                type="number"
+                                                                min={0}
+                                                                max={Number.isFinite(item.quantity) ? item.quantity : 0}
+                                                                className="w-full max-w-[4rem] mx-auto border border-amber-200 rounded-md text-sm py-1.5 px-2 text-center bg-amber-50/80 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                                                                value={Math.min(partialDelivery[index] ?? 0, item.quantity)}
+                                                                onChange={(e) => {
+                                                                    const v = parseInt(e.target.value, 10);
+                                                                    if (!Number.isFinite(v)) return;
+                                                                    const next = [...partialDelivery];
+                                                                    while (next.length <= index) next.push(0);
+                                                                    next[index] = Math.max(0, Math.min(v, item.quantity));
+                                                                    setPartialDelivery(next);
+                                                                }}
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    <td className="py-2.5 px-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeItem(item.id)}
+                                                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                            aria-label="Remove line"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr className="bg-slate-100 border-t-2 border-slate-200">
+                                                <td colSpan={5} className="py-3 px-4 text-right font-semibold text-slate-700">
+                                                    Total
+                                                </td>
+                                                <td className="py-3 px-4 text-right font-semibold text-slate-900 tabular-nums">
+                                                    ${calculateTotal().toFixed(2)}
+                                                </td>
+                                                {(orderStatus === 'Partial Completion' || orderStatus === 'Partial Order Complete') && <td />}
+                                                <td className="py-3 px-2" />
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     </div>
                     )}

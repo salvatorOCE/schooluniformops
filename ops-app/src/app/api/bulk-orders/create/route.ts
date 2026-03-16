@@ -63,13 +63,13 @@ export async function POST(req: NextRequest) {
   const fakeWooId = -(Date.now() % 2147483648);
   const bulkOrderNumber = body.orderNumber || `BULK-${school?.code || schoolId.substring(0, 4).toUpperCase()}-${Math.floor(Math.random() * 1000)}`;
 
+  const defaultStatus = body.status || 'Needs Ordering';
   const meta: Record<string, unknown> = {
     order_source: orderSource,
+    status_changes: [{ status: defaultStatus, at: new Date().toISOString() }],
   };
   if (body.requestedAt) meta.order_requested_at = body.requestedAt;
   if (body.partialDelivery && body.partialDelivery.length > 0) meta.partial_delivery = body.partialDelivery;
-
-  const defaultStatus = orderSource === 'school' ? 'Needs Ordering' : (body.status || 'Processing');
 
   const { data: insertedOrder, error: orderError } = await supabaseAdmin
     .from('orders')

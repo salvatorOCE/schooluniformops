@@ -104,7 +104,11 @@ export class SupabaseAdapter implements DataAdapter {
             .eq('id', schoolId)
             .single();
 
-        const meta: Record<string, unknown> = { order_source: 'admin' };
+        const initialStatus = orderDetails.status || 'Needs Ordering';
+        const meta: Record<string, unknown> = {
+            order_source: 'admin',
+            status_changes: [{ status: initialStatus, at: new Date().toISOString() }]
+        };
         if (orderDetails.requestedAt) meta.order_requested_at = orderDetails.requestedAt;
         if (orderDetails.partialDelivery && orderDetails.partialDelivery.length > 0) meta.partial_delivery = orderDetails.partialDelivery;
         const metaPayload = meta;
@@ -115,7 +119,7 @@ export class SupabaseAdapter implements DataAdapter {
             .insert({
                 woo_order_id: fakeWooId,
                 order_number: bulkOrderNumber,
-                status: orderDetails.status || 'Processing',
+                status: initialStatus,
                 customer_name: orderDetails.customerName || 'School Admin',
                 student_name: orderDetails.studentName || 'BULK_STOCK',
                 school_id: schoolId,
@@ -163,20 +167,30 @@ export class SupabaseAdapter implements DataAdapter {
     ): Promise<Order> {
         if (!supabase) throw new Error("Supabase not initialized");
 
+        const { data: existingRow } = await supabase.from('orders').select('status, meta').eq('id', orderId).single();
+        const existingMeta = (existingRow as { meta?: Record<string, unknown> } | null)?.meta && typeof (existingRow as any).meta === 'object'
+            ? (existingRow as any).meta as Record<string, unknown>
+            : {};
+        const currentStatus = (existingRow as { status?: string } | null)?.status ?? '';
+
         const orderUpdates: Record<string, unknown> = { school_id: schoolId };
         if (orderDetails.orderNumber !== undefined) orderUpdates.order_number = orderDetails.orderNumber;
         if (orderDetails.customerName !== undefined) orderUpdates.customer_name = orderDetails.customerName;
         if (orderDetails.studentName !== undefined) orderUpdates.student_name = orderDetails.studentName;
         if (orderDetails.status !== undefined) orderUpdates.status = orderDetails.status;
-        if (orderDetails.requestedAt !== undefined || orderDetails.partialDelivery !== undefined) {
-            const { data: existing } = await supabase.from('orders').select('meta').eq('id', orderId).single();
-            const existingMeta = (existing as { meta?: Record<string, unknown> } | null)?.meta && typeof (existing as any).meta === 'object' ? (existing as any).meta as Record<string, unknown> : {};
-            orderUpdates.meta = {
-                ...existingMeta,
-                order_requested_at: orderDetails.requestedAt ?? existingMeta.order_requested_at,
-                partial_delivery: orderDetails.partialDelivery ?? existingMeta.partial_delivery ?? [],
-            };
-        }
+
+        const statusChanged = orderDetails.status !== undefined && orderDetails.status !== currentStatus;
+        const existingStatusChanges = Array.isArray(existingMeta.status_changes) ? (existingMeta.status_changes as { status: string; at: string }[]) : [];
+        const statusChanges = statusChanged
+            ? [{ status: orderDetails.status!, at: new Date().toISOString() }, ...existingStatusChanges]
+            : existingStatusChanges;
+
+        orderUpdates.meta = {
+            ...existingMeta,
+            order_requested_at: orderDetails.requestedAt ?? existingMeta.order_requested_at,
+            partial_delivery: orderDetails.partialDelivery ?? existingMeta.partial_delivery ?? [],
+            status_changes: statusChanges.length > 0 ? statusChanges : undefined,
+        };
 
         const { error: orderError } = await supabase
             .from('orders')
@@ -646,6 +660,7 @@ export class SupabaseAdapter implements DataAdapter {
             embroidery_status: 'PENDING', // Derived mostly, simplified for now
             items: row.order_items.map(i => ({
                 id: i.id,
+                product_id: (i as any).product_id ?? undefined,
                 product_name: i.name,
                 sku: i.sku,
                 quantity: i.quantity,
